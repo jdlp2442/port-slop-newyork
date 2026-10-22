@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0169;CS0414;CS0649;CS1998;CS0108;CS0067</NoWarn>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="UrpStubs.cs" />
+    <Compile Include="JobsStubs.cs" />
+    <Compile Include="UiToolkitStubs.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="../../Assets/Scripts/Core/CityFrame.cs" />
+    <Compile Include="../../Assets/Scripts/Data/NycGeoData.cs" />
+    <Compile Include="../../Assets/Scripts/Data/NycGeoDataLoader.cs" />
+    <Compile Include="../../Assets/Scripts/Data/CityConfig.cs" />
+    <Compile Include="../../Assets/Scripts/Data/CitySpatialIndex.cs" />
+    <Compile Include="../../Assets/Scripts/Core/CollisionBox.cs" />
+    <Compile Include="../../Assets/Scripts/Generation/PolygonTriangulator.cs" />
+    <Compile Include="../../Assets/Scripts/Generation/ManhattanMeshBuilder.cs" />
+    <Compile Include="../../Assets/Scripts/Generation/RoadMarkingBuilder.cs" />
+    <Compile Include="../../Assets/Scripts/Generation/LandmarkMeshBuilder.cs" />
+    <Compile Include="../../Assets/Scripts/Generation/BoroughsMeshBuilder.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/CollisionWorld.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/TravelController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/PedestrianController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/CarController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/BikeController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/HelicopterController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/PlayerInputReader.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/TeleportService.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/ThirdPersonControllerManager.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/CameraManager.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/RoadNetwork.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficJobs.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/VehicleMeshFactory.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficSystem.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficRenderer.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Pedestrians/PedestrianCrowd.cs" />
+    <Compile Include="../../Assets/Scripts/UI/NycMapBaker.cs" />
+    <Compile Include="../../Assets/Scripts/UI/LocationLabel.cs" />
+    <Compile Include="../../Assets/Scripts/UI/NycMapSystem.cs" />
+    <Compile Include="../../Assets/Scripts/UI/HUDController.cs" />
+    <Compile Include="../../Assets/Scripts/UI/TouchControlsController.cs" />
+    <Compile Include="../../Assets/Scripts/Core/NycMainBootstrapper.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/NycShaderIDs.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/TimeOfDayPreset.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/LightingSystem.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/TreeSystem.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/StreetDetailsSystem.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/SceneCullingSystem.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/PostProcessingController.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/ActorModelFactory.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/VehicleLightsRenderer.cs" />
+    <Compile Include="../../Assets/Editor/ManhattanBakeMenu.cs" />
+    <Compile Include="../../Assets/Editor/NycPresetCreator.cs" />
+    <Compile Include="../../Assets/Editor/NycGeoDataImporter.cs" />
+  </ItemGroup>
+</Project>

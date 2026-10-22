@@ -1,0 +1,31 @@
+# Archives and temp packages
+*.zip
+*.tar.gz
+*.7z
+.workbuddy-ai/
+
+# .NET / C# Build Outputs
+[Bb]in/
+[Oo]bj/
+
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+Recordings/
+
+# IDE and OS
+.vs/
+.idea/
+.vscode/
+*.user
+*.userprefs
+*.pidb
+*.suo
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,642 @@
+/* ---------------------------------------------------------------------------------------------
+   Slop New York HUD — UI Toolkit port of css/style.css
+   Design language: quiet graphite glass in the corners, taxi yellow for whatever is active,
+   NYC DOT green for the street-name blade.
+   --------------------------------------------------------------------------------------------- */
+
+.hud-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    font-size: 14px;
+    color: #F6F5F2;
+}
+
+.hud {
+    position: absolute;
+}
+
+.top-left   { left: 20px; top: 20px; }
+.top-right  { right: 20px; top: 20px; align-items: flex-end; }
+.bottom-left { left: 20px; bottom: 20px; }
+.bottom-center { left: 0; right: 0; bottom: 20px; align-items: center; }
+.bottom-right { right: 20px; bottom: 20px; align-items: flex-end; }
+
+/* ------------------------------------------------------------------ glass panel */
+
+.panel {
+    background-color: rgba(18, 19, 22, 0.62);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+}
+
+/* ------------------------------------------------------------------ brand */
+
+.brand {
+    flex-direction: row;
+    align-items: center;
+    padding: 9px 14px 9px 10px;
+}
+
+.mta-bullet {
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background-color: #FFC21A;
+    color: #17140A;
+    font-size: 12px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-right: 10px;
+}
+
+.brand-titles {
+    flex-direction: column;
+}
+
+.brand-title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    letter-spacing: 0.2px;
+    color: #F6F5F2;
+}
+
+.brand-sub {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 1px;
+}
+
+.brand-sub-text {
+    font-size: 11px;
+    color: rgba(246, 245, 242, 0.44);
+}
+
+.fps {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: #5EE08F;
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+.toolbar {
+    flex-direction: row;
+    align-items: center;
+    padding: 5px;
+}
+
+.time-switch {
+    flex-direction: row;
+    align-items: center;
+}
+
+.time-btn {
+    height: 34px;
+    padding: 0 11px;
+    border-width: 0;
+    border-radius: 10px;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgba(246, 245, 242, 0.68);
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.time-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #F6F5F2;
+}
+
+.time-btn.active {
+    background-color: rgba(255, 255, 255, 0.11);
+    color: #F6F5F2;
+}
+
+.divider {
+    width: 1px;
+    height: 22px;
+    background-color: rgba(255, 255, 255, 0.10);
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.tool-btn {
+    height: 34px;
+    padding: 0 11px;
+    border-width: 0;
+    border-radius: 10px;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgba(246, 245, 242, 0.68);
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.tool-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #F6F5F2;
+}
+
+.tool-btn.icon-only {
+    width: 34px;
+    padding: 0;
+    -unity-text-align: middle-center;
+}
+
+/* ------------------------------------------------------------------ popovers */
+
+.popover {
+    position: absolute;
+    right: 0;
+    top: 56px;
+    width: 264px;
+    padding: 8px;
+    background-color: rgba(16, 17, 20, 0.94);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.10);
+    border-radius: 14px;
+    display: none;
+}
+
+.pop-title {
+    font-size: 10px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgba(246, 245, 242, 0.44);
+    padding: 8px 10px 4px 10px;
+}
+
+.pop-item {
+    height: 34px;
+    padding: 0 10px;
+    border-width: 0;
+    border-radius: 9px;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgba(246, 245, 242, 0.86);
+    font-size: 12px;
+    -unity-text-align: middle-left;
+}
+
+.pop-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #F6F5F2;
+}
+
+.pop-item.active {
+    background-color: #FFC21A;
+    color: #17140A;
+}
+
+/* ------------------------------------------------------------------ location + radar */
+
+.location {
+    margin-bottom: 8px;
+}
+
+.location-place {
+    font-size: 11px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.92);
+    margin-bottom: 6px;
+}
+
+.street-sign {
+    align-self: flex-start;
+    padding: 8px 13px 6px 13px;
+    background-color: #0B6A46;
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.92);
+    border-radius: 6px;
+    color: #FFFFFF;
+    font-size: 15px;
+    -unity-font-style: bold;
+}
+
+.radar {
+    width: 288px;
+    height: 184px;
+    border-radius: 18px;
+    background-color: #0A1118;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.minimap-map {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2048px;
+    height: 2048px;
+}
+
+.minimap-player {
+    position: absolute;
+    left: 139px;
+    top: 83px;
+    width: 14px;
+    height: 14px;
+    font-size: 12px;
+    color: #FFC21A;
+    -unity-text-align: middle-center;
+}
+
+.radar-north {
+    position: absolute;
+    left: 135px;
+    top: 7px;
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background-color: rgba(10, 12, 15, 0.72);
+    color: #FFFFFF;
+    font-size: 9px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.radar-key {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background-color: rgba(10, 12, 15, 0.7);
+    color: rgba(246, 245, 242, 0.6);
+    font-size: 10px;
+    -unity-font-style: bold;
+}
+
+/* ------------------------------------------------------------------ mode switch */
+
+.controls-hint {
+    font-size: 11px;
+    color: rgba(246, 245, 242, 0.5);
+    margin-bottom: 8px;
+    -unity-text-align: middle-center;
+}
+
+.mode-switch {
+    flex-direction: row;
+    align-items: center;
+    padding: 5px;
+}
+
+.mode-indicator {
+    position: absolute;
+    left: 5px;
+    top: 5px;
+    bottom: 5px;
+    width: 90px;
+    background-color: #FFC21A;
+    border-radius: 12px;
+}
+
+.mode-btn {
+    height: 42px;
+    padding: 0 13px;
+    margin-right: 2px;
+    border-width: 0;
+    border-radius: 12px;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgba(246, 245, 242, 0.68);
+    font-size: 13px;
+    -unity-font-style: bold;
+    flex-direction: row;
+    align-items: center;
+}
+
+.mode-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #F6F5F2;
+}
+
+.mode-btn.active {
+    background-color: rgba(0, 0, 0, 0);
+    color: #17140A;
+}
+
+.kbd {
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(246, 245, 242, 0.6);
+    font-size: 10px;
+    -unity-font-style: bold;
+}
+
+.mode-btn.active .kbd {
+    background-color: rgba(23, 20, 10, 0.10);
+    color: rgba(23, 20, 10, 0.62);
+}
+
+/* ------------------------------------------------------------------ cluster */
+
+.cluster {
+    width: 272px;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.gauge {
+    padding: 13px 16px 14px 16px;
+}
+
+.gauge-top {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.gauge-label {
+    font-size: 10px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgba(246, 245, 242, 0.44);
+}
+
+.gauge-alt {
+    flex-direction: row;
+    align-items: center;
+}
+
+.gauge-alt-label {
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: rgba(246, 245, 242, 0.44);
+}
+
+.gauge-alt-value {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(246, 245, 242, 0.68);
+}
+
+.gauge-speed {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-top: 4px;
+}
+
+.gauge-number {
+    font-size: 42px;
+    -unity-font-style: bold;
+    letter-spacing: -1px;
+    color: #F6F5F2;
+}
+
+.gauge-unit {
+    font-size: 12px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: rgba(246, 245, 242, 0.44);
+    margin-left: 6px;
+    margin-bottom: 8px;
+}
+
+.gauge-meter {
+    height: 3px;
+    margin-top: 10px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.gauge-meter-fill {
+    height: 3px;
+    width: 0;
+    background-color: #FFC21A;
+    border-radius: 2px;
+}
+
+.camera-switch {
+    flex-direction: row;
+    align-items: center;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    padding: 6px;
+}
+
+.icon-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-width: 0;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgba(246, 245, 242, 0.68);
+    font-size: 16px;
+    -unity-text-align: middle-center;
+}
+
+.icon-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #F6F5F2;
+}
+
+.camera-current {
+    flex-grow: 1;
+    height: 30px;
+    padding: 0 8px;
+    border-width: 0;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0);
+    color: #F6F5F2;
+    font-size: 12px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.camera-current:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.camera-caption {
+    display: none;
+}
+
+/* ------------------------------------------------------------------ full map */
+
+.fullmap {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(6, 7, 9, 0.94);
+    display: none;
+}
+
+.fullmap-canvas-wrap {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.fullmap-map {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2048px;
+    height: 2048px;
+}
+
+.fullmap-header {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    right: 20px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.fullmap-title {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 14px 8px 10px;
+}
+
+.fullmap-h2 {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: #F6F5F2;
+}
+
+.fullmap-sub {
+    font-size: 11px;
+    color: rgba(246, 245, 242, 0.44);
+    margin-top: 2px;
+}
+
+.fullmap-search {
+    width: 420px;
+    height: 38px;
+    padding: 0 12px;
+    background-color: rgba(18, 19, 22, 0.86);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    color: #F6F5F2;
+    font-size: 13px;
+}
+
+.fullmap-results {
+    position: absolute;
+    left: 20px;
+    top: 86px;
+    width: 420px;
+}
+
+.map-result {
+    height: 34px;
+    margin-bottom: 4px;
+    padding: 0 12px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 9px;
+    background-color: rgba(18, 19, 22, 0.86);
+    color: rgba(246, 245, 242, 0.86);
+    font-size: 12px;
+    -unity-text-align: middle-left;
+}
+
+.map-result:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: #F6F5F2;
+}
+
+.fullmap-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 22px;
+    font-size: 11px;
+    color: rgba(246, 245, 242, 0.44);
+    -unity-text-align: middle-center;
+}
+
+/* ------------------------------------------------------------------ clean view */
+
+.hud-hidden .hud {
+    display: none;
+}
+
+/* ------------------------------------------------------------------ touch controls */
+
+.touch-controls {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.touch-movement {
+    position: absolute;
+    left: 32px;
+    bottom: 32px;
+    width: 100px;
+    height: 124px;
+    align-items: center;
+    justify-content: center;
+}
+
+.touch-stick {
+    width: 88px;
+    height: 88px;
+    border-radius: 44px;
+    background-color: rgba(22, 24, 28, 0.45);
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.25);
+    align-items: center;
+    justify-content: center;
+}
+
+.touch-stick-knob {
+    width: 42px;
+    height: 42px;
+    border-radius: 21px;
+    background-color: rgba(255, 255, 255, 0.70);
+}
+
+.touch-caption {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-top: 6px;
+    -unity-text-align: middle-center;
+}
+
+.touch-actions {
+    position: absolute;
+    right: 32px;
+    bottom: 32px;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+}
+
+.touch-action {
+    min-width: 58px;
+    height: 58px;
+    border-radius: 29px;
+    background-color: rgba(22, 24, 28, 0.65);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.30);
+    color: #FFFFFF;
+    font-size: 12px;
+    margin-top: 10px;
+    -unity-text-align: middle-center;
+}
+
+.touch-action.is-boost {
+    background-color: rgba(255, 185, 24, 0.82);
+    color: #121316;
+    -unity-font-style: bold;
+}

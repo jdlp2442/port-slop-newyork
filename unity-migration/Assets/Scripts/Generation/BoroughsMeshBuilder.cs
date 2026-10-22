@@ -1,0 +1,915 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Rendering;
+using Nyc.Core;
+using Nyc.Data;
+
+namespace Nyc.Generation
+{
+    /// <summary>
+    /// Procedural mesh generator for New York City's surrounding boroughs, harbor islands,
+    /// waterfront piers, bridges, the Palisades cliff ridge, and skyline clusters.
+    /// Full 1:1 port of js/boroughs.js and waterfront piers from city-grid.js.
+    /// </summary>
+    public sealed class BoroughsMeshBuilder : MonoBehaviour
+    {
+        public bool buildLandMasses = true;
+        public bool buildPalisadesRidge = true;
+        public bool buildSignatureTowers = true;
+        public bool buildPiers = true;
+        public bool buildBridges = true;
+        public bool buildHarborLandmarks = true;
+
+        [Header("Materials")]
+        public Material landMaterial;
+        public Material bulkheadMaterial;
+        public Material palisadesMaterial;
+        public Material boroughBuildingMaterial;
+        public Material bridgeSteelMaterial;
+        public Material bridgeStoneMaterial;
+        public Material pierDeckMaterial;
+        public Material pierPileMaterial;
+        public Material statueCopperMaterial;
+
+        public Transform BoroughsRoot { get; private set; }
+        public readonly List<CollisionBox> CollisionBoxes = new List<CollisionBox>(128);
+
+        const float LandBottomY = -3.6f;
+        const float WaterLevelY = -2.2f;
+
+        public GameObject Build(NycGeoData geo = null, Transform parent = null)
+        {
+            if (geo == null) geo = CityConfig.Geo;
+            EnsureMaterials();
+
+            var rootGo = new GameObject("BoroughsAndHarbor");
+            if (parent != null) rootGo.transform.SetParent(parent, false);
+            else rootGo.transform.SetParent(transform, false);
+            BoroughsRoot = rootGo.transform;
+            CollisionBoxes.Clear();
+
+            if (buildLandMasses) BuildLandMasses(geo, BoroughsRoot);
+            if (buildPalisadesRidge) BuildPalisadesRidge(BoroughsRoot);
+            if (buildPiers) BuildPiers(geo, BoroughsRoot);
+            if (buildSignatureTowers) BuildSignatureTowers(BoroughsRoot);
+            if (buildBridges) BuildBridges(geo, BoroughsRoot);
+            if (buildHarborLandmarks) BuildHarborLandmarks(BoroughsRoot);
+
+            return rootGo;
+        }
+
+        // =========================================================================
+        // 1. LAND MASSES & BULKHEADS (NJ, Brooklyn, Queens, Bronx, SI, Islands)
+        // =========================================================================
+        void BuildLandMasses(NycGeoData geo, Transform parent)
+        {
+            var landGo = new GameObject("BoroughLandMasses");
+            landGo.transform.SetParent(parent, false);
+
+            var topVerts = new List<Vector3>(16384);
+            var topNorms = new List<Vector3>(16384);
+            var topUvs   = new List<Vector2>(16384);
+            var topColors = new List<Color32>(16384);
+            var topTris  = new List<int>(32768);
+
+            var wallVerts = new List<Vector3>(8192);
+            var wallNorms = new List<Vector3>(8192);
+            var wallUvs   = new List<Vector2>(8192);
+            var wallColors = new List<Color32>(8192);
+            var wallTris  = new List<int>(16384);
+
+            // Collect all land polygons from geo
+            var lands = new List<(string name, Vector2[] pts, float topY)>();
+
+            if (geo.Boroughs.TryGetValue("newJersey", out var njRings) && njRings.Length > 0)
+                lands.Add(("NJ", njRings[0], 0.0f));
+
+            if (geo.Boroughs.TryGetValue("brooklyn", out var bkRings))
+                foreach (var r in bkRings) if (r.Length >= 3) lands.Add(("Brooklyn", r, 0.0f));
+
+            if (geo.Boroughs.TryGetValue("queens", out var qnRings))
+                foreach (var r in qnRings) if (r.Length >= 3) lands.Add(("Queens", r, 0.0f));
+
+            if (geo.Boroughs.TryGetValue("bronx", out var bxRings))
+                foreach (var r in bxRings) if (r.Length >= 3) lands.Add(("Bronx", r, 0.0f));
+
+            if (geo.Boroughs.TryGetValue("statenIsland", out var siRings))
+                foreach (var r in siRings) if (r.Length >= 3) lands.Add(("StatenIsland", r, 0.0f));
+
+            if (geo.UpperManhattan != null && geo.UpperManhattan.Length >= 3)
+                lands.Add(("UpperManhattan", geo.UpperManhattan, -0.02f));
+
+            // Harbor Islands
+            if (geo.Islands.TryGetValue("roosevelt", out var roos)) lands.Add(("RooseveltIsland", roos, 0.3f));
+            if (geo.Islands.TryGetValue("randalls", out var rand)) lands.Add(("RandallsIsland", rand, 0.35f));
+            if (geo.Islands.TryGetValue("governors", out var gov)) lands.Add(("GovernorsIsland", gov, 0.45f));
+            if (geo.Islands.TryGetValue("liberty", out var lib)) lands.Add(("LibertyIsland", lib, 0.6f));
+            if (geo.Islands.TryGetValue("ellis", out var ell)) lands.Add(("EllisIsland", ell, 0.6f));
+            if (geo.Islands.TryGetValue("millRock", out var mill)) lands.Add(("MillRock", mill, 0.3f));
+
+            foreach (var (name, pts, topY) in lands)
+            {
+                if (pts == null || pts.Length < 3) continue;
+
+                // Triangulate top surface
+                var verts2D = new List<Vector2>();
+                var tris = new List<int>();
+                PolygonTriangulator.Triangulate(pts, null, verts2D, tris);
+
+                int baseTop = topVerts.Count;
+                for (int i = 0; i < verts2D.Count; i++)
+                {
+                    Vector2 p = verts2D[i];
+                    topVerts.Add(CityFrame.ToUnity(p.x, topY, p.y));
+                    topNorms.Add(Vector3.up);
+                    topUvs.Add(new Vector2(p.x * 0.01f, p.y * 0.01f));
+                    topColors.Add(Color.white);
+                }
+                for (int i = 0; i < tris.Count; i += 3)
+                {
+                    topTris.Add(baseTop + tris[i]);
+                    topTris.Add(baseTop + tris[i + 1]);
+                    topTris.Add(baseTop + tris[i + 2]);
+                }
+
+                // Vertical Bulkhead Quads along shoreline
+                for (int i = 0; i < pts.Length; i++)
+                {
+                    Vector2 a = pts[i];
+                    Vector2 b = pts[(i + 1) % pts.Length];
+                    float dx = b.x - a.x;
+                    float dz = b.y - a.y;
+                    float len = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (len < 0.1f || len > 2500f) continue; // skip artificial closure lines to horizon
+
+                    Vector3 aTop = CityFrame.ToUnity(a.x, topY, a.y);
+                    Vector3 aBot = CityFrame.ToUnity(a.x, LandBottomY, a.y);
+                    Vector3 bTop = CityFrame.ToUnity(b.x, topY, b.y);
+                    Vector3 bBot = CityFrame.ToUnity(b.x, LandBottomY, b.y);
+
+                    Vector3 n = Vector3.Cross(bBot - aBot, aTop - aBot).normalized;
+
+                    int wBase = wallVerts.Count;
+                    wallVerts.Add(aTop); wallNorms.Add(n); wallUvs.Add(new Vector2(0, 1)); wallColors.Add(Color.white);
+                    wallVerts.Add(aBot); wallNorms.Add(n); wallUvs.Add(new Vector2(0, 0)); wallColors.Add(Color.white);
+                    wallVerts.Add(bBot); wallNorms.Add(n); wallUvs.Add(new Vector2(1, 0)); wallColors.Add(Color.white);
+                    wallVerts.Add(bTop); wallNorms.Add(n); wallUvs.Add(new Vector2(1, 1)); wallColors.Add(Color.white);
+
+                    wallTris.Add(wBase); wallTris.Add(wBase + 1); wallTris.Add(wBase + 2);
+                    wallTris.Add(wBase); wallTris.Add(wBase + 2); wallTris.Add(wBase + 3);
+                }
+            }
+
+            // Create Land Top GameObject
+            if (topVerts.Count > 0)
+            {
+                var topMesh = new Mesh { name = "BoroughsLandTop" };
+                if (topVerts.Count > 65000) topMesh.indexFormat = IndexFormat.UInt32;
+                topMesh.SetVertices(topVerts);
+                topMesh.SetNormals(topNorms);
+                SetAllUVs(topMesh, topUvs, topVerts.Count);
+                topMesh.SetColors(topColors);
+                topMesh.SetTriangles(topTris, 0);
+                topMesh.RecalculateBounds();
+
+                var mf = landGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = topMesh;
+                var mr = landGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = landMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.Off;
+                mr.receiveShadows = true;
+            }
+
+            // Create Bulkhead Wall GameObject
+            if (wallVerts.Count > 0)
+            {
+                var wallGo = new GameObject("BoroughBulkheads");
+                wallGo.transform.SetParent(landGo.transform, false);
+
+                var wallMesh = new Mesh { name = "BoroughBulkheads" };
+                if (wallVerts.Count > 65000) wallMesh.indexFormat = IndexFormat.UInt32;
+                wallMesh.SetVertices(wallVerts);
+                wallMesh.SetNormals(wallNorms);
+                SetAllUVs(wallMesh, wallUvs, wallVerts.Count);
+                wallMesh.SetColors(wallColors);
+                wallMesh.SetTriangles(wallTris, 0);
+                wallMesh.RecalculateBounds();
+
+                var mf = wallGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = wallMesh;
+                var mr = wallGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = bulkheadMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+        }
+
+        // =========================================================================
+        // 2. PALISADES RIDGE CLIFFS (New Jersey diabase cliffs)
+        // =========================================================================
+        void BuildPalisadesRidge(Transform parent)
+        {
+            var ridgeGo = new GameObject("PalisadesRidge");
+            ridgeGo.transform.SetParent(parent, false);
+
+            // Sample rows along the Hudson River from Fort Lee down to Jersey City Heights
+            var rows = new List<float>();
+            for (float z = -20000; z < -14000; z += 200f) rows.Add(z);
+            for (float z = -14000; z < 4000; z += 50f) rows.Add(z);
+            for (float z = 4000; z <= 12000; z += 150f) rows.Add(z);
+
+            float[] faceFractions = new[] { 0.15f, 0.35f, 0.55f, 0.70f, 0.85f, 1.0f };
+            float[] backFractions = new[] { 0.1f, 0.25f, 0.5f, 0.75f, 1.0f };
+            int numCols = 2 + faceFractions.Length + backFractions.Length;
+
+            var verts = new List<Vector3>(rows.Count * numCols);
+            var norms = new List<Vector3>(rows.Count * numCols);
+            var uvs   = new List<Vector2>(rows.Count * numCols);
+            var tris  = new List<int>((rows.Count - 1) * (numCols - 1) * 6);
+
+            for (int r = 0; r < rows.Count; r++)
+            {
+                float z = rows[r];
+                GetRidgeParams(z, out float cliffX, out float cliffH, out float cliffW, out float backW);
+
+                var dList = new List<float> { -12f, 0f };
+                foreach (float f in faceFractions) dList.Add(f * cliffW);
+                foreach (float b in backFractions) dList.Add(cliffW + b * backW);
+
+                for (int c = 0; c < dList.Count; c++)
+                {
+                    float d = dList[c];
+                    float x = cliffX - d;
+                    float y = d <= 0 ? (d <= -12 ? -1.5f : -1.5f * (-d / 12f))
+                                     : GetRidgeProfile(d, cliffH, cliffW, backW);
+
+                    verts.Add(CityFrame.ToUnity(x, y, z));
+                    norms.Add(Vector3.up); // recalculated below
+                    uvs.Add(new Vector2(d * 0.02f, z * 0.01f));
+                }
+            }
+
+            for (int r = 0; r < rows.Count - 1; r++)
+            {
+                for (int c = 0; c < numCols - 1; c++)
+                {
+                    int i0 = r * numCols + c;
+                    int i1 = i0 + 1;
+                    int i2 = (r + 1) * numCols + c;
+                    int i3 = i2 + 1;
+
+                    tris.Add(i0); tris.Add(i2); tris.Add(i1);
+                    tris.Add(i1); tris.Add(i2); tris.Add(i3);
+                }
+            }
+
+            if (verts.Count > 0)
+            {
+                var mesh = new Mesh { name = "PalisadesRidge" };
+                if (verts.Count > 65000) mesh.indexFormat = IndexFormat.UInt32;
+                mesh.SetVertices(verts);
+                SetAllUVs(mesh, uvs, verts.Count);
+                mesh.SetTriangles(tris, 0);
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+
+                var mf = ridgeGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = mesh;
+                var mr = ridgeGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = palisadesMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+        }
+
+        static void GetRidgeParams(float z, out float crestX, out float height, out float cliffWidth, out float backReach)
+        {
+            // Port of RIDGE_KEYS interpolation
+            if (z < -14000f)
+            {
+                crestX = -3200f; height = 130f; cliffWidth = 110f; backReach = 1800f;
+            }
+            else if (z < -8000f)
+            {
+                float t = (z + 14000f) / 6000f;
+                crestX = Mathf.Lerp(-3200f, -3400f, t);
+                height = Mathf.Lerp(130f, 80f, t);
+                cliffWidth = Mathf.Lerp(110f, 90f, t);
+                backReach = 1600f;
+            }
+            else if (z < 0f) // Weehawken
+            {
+                float t = (z + 8000f) / 8000f;
+                crestX = Mathf.Lerp(-3400f, -3800f, t);
+                height = Mathf.Lerp(80f, 55f, t);
+                cliffWidth = Mathf.Lerp(90f, 80f, t);
+                backReach = 1400f;
+            }
+            else if (z < 6000f) // Jersey City Heights
+            {
+                float t = z / 6000f;
+                crestX = Mathf.Lerp(-3800f, -4700f, t);
+                height = Mathf.Lerp(55f, 38f, t);
+                cliffWidth = Mathf.Lerp(80f, 180f, t);
+                backReach = 1200f;
+            }
+            else // Bayonne
+            {
+                float t = Mathf.Clamp01((z - 6000f) / 6000f);
+                crestX = Mathf.Lerp(-4700f, -5100f, t);
+                height = Mathf.Lerp(38f, 10f, t);
+                cliffWidth = Mathf.Lerp(180f, 260f, t);
+                backReach = 800f;
+            }
+        }
+
+        static float Smooth01(float t)
+        {
+            float x = Mathf.Clamp01(t);
+            return x * x * (3f - 2f * x);
+        }
+
+        static float GetRidgeProfile(float d, float h, float cw, float back)
+        {
+            if (d < cw)
+            {
+                float t = d / cw;
+                float talus = 0.4f * Smooth01(t / 0.62f);
+                float face = 0.56f * Smooth01((t - 0.55f) / 0.4f);
+                return h * (talus + face);
+            }
+            float b = d - cw;
+            if (b >= back) return -1.5f;
+            float crest = 0.96f + 0.04f * Smooth01(b / 30f);
+            float fall = 1.0f - Smooth01(b / back);
+            return h * crest * fall;
+        }
+
+        // =========================================================================
+        // 3. WATERFRONT PIERS (Piers from osm_piers.json / geo.Piers)
+        // =========================================================================
+        void BuildPiers(NycGeoData geo, Transform parent)
+        {
+            if (geo.Piers == null || geo.Piers.Count == 0) return;
+
+            var piersGo = new GameObject("WaterfrontPiers");
+            piersGo.transform.SetParent(parent, false);
+
+            var deckVerts = new List<Vector3>(8192);
+            var deckNorms = new List<Vector3>(8192);
+            var deckUvs   = new List<Vector2>(8192);
+            var deckTris  = new List<int>(16384);
+
+            var pileVerts = new List<Vector3>(8192);
+            var pileNorms = new List<Vector3>(8192);
+            var pileUvs   = new List<Vector2>(8192);
+            var pileTris  = new List<int>(16384);
+
+            foreach (var pier in geo.Piers)
+            {
+                if (pier.Len < 10f || pier.Wid < 4f) continue;
+
+                float cx = pier.Cx, cz = pier.Cz;
+                float hl = pier.Len * 0.5f, hw = pier.Wid * 0.5f;
+                float ang = pier.Ang;
+                float cs = Mathf.Cos(ang), sn = Mathf.Sin(ang);
+
+                // 4 corners of the pier deck in world space (y = 0.6m)
+                Vector2 c0 = RotatePoint(-hl, -hw, cs, sn, cx, cz);
+                Vector2 c1 = RotatePoint(hl, -hw, cs, sn, cx, cz);
+                Vector2 c2 = RotatePoint(hl, hw, cs, sn, cx, cz);
+                Vector2 c3 = RotatePoint(-hl, hw, cs, sn, cx, cz);
+
+                // Top deck polygon
+                int dBase = deckVerts.Count;
+                Vector3 p0 = CityFrame.ToUnity(c0.x, 0.6f, c0.y);
+                Vector3 p1 = CityFrame.ToUnity(c1.x, 0.6f, c1.y);
+                Vector3 p2 = CityFrame.ToUnity(c2.x, 0.6f, c2.y);
+                Vector3 p3 = CityFrame.ToUnity(c3.x, 0.6f, c3.y);
+
+                deckVerts.Add(p0); deckNorms.Add(Vector3.up); deckUvs.Add(new Vector2(0, 0));
+                deckVerts.Add(p1); deckNorms.Add(Vector3.up); deckUvs.Add(new Vector2(1, 0));
+                deckVerts.Add(p2); deckNorms.Add(Vector3.up); deckUvs.Add(new Vector2(1, 1));
+                deckVerts.Add(p3); deckNorms.Add(Vector3.up); deckUvs.Add(new Vector2(0, 1));
+
+                deckTris.Add(dBase); deckTris.Add(dBase + 1); deckTris.Add(dBase + 2);
+                deckTris.Add(dBase); deckTris.Add(dBase + 2); deckTris.Add(dBase + 3);
+
+                // Fascia edges down to water
+                AddPierFascia(deckVerts, deckNorms, deckUvs, deckTris, p0, p1);
+                AddPierFascia(deckVerts, deckNorms, deckUvs, deckTris, p1, p2);
+                AddPierFascia(deckVerts, deckNorms, deckUvs, deckTris, p2, p3);
+
+                // Timber pilings below the deck
+                float stepL = 12f;
+                for (float dl = -hl + 4f; dl <= hl - 4f; dl += stepL)
+                {
+                    for (float dw = -hw + 2f; dw <= hw - 2f; dw += 6f)
+                    {
+                        Vector2 pos = RotatePoint(dl, dw, cs, sn, cx, cz);
+                        AddPiling(pileVerts, pileNorms, pileUvs, pileTris, pos.x, pos.y);
+                    }
+                }
+
+                // Add collision box for the pier
+                float minX = Mathf.Min(Mathf.Min(c0.x, c1.x), Mathf.Min(c2.x, c3.x));
+                float maxX = Mathf.Max(Mathf.Max(c0.x, c1.x), Mathf.Max(c2.x, c3.x));
+                float minZ = Mathf.Min(Mathf.Min(c0.y, c1.y), Mathf.Min(c2.y, c3.y));
+                float maxZ = Mathf.Max(Mathf.Max(c0.y, c1.y), Mathf.Max(c2.y, c3.y));
+                CollisionBoxes.Add(new CollisionBox
+                {
+                    MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ, MaxY = 1.2f
+                });
+            }
+
+            if (deckVerts.Count > 0)
+            {
+                var dMesh = new Mesh { name = "PierDecks" };
+                if (deckVerts.Count > 65000) dMesh.indexFormat = IndexFormat.UInt32;
+                dMesh.SetVertices(deckVerts);
+                dMesh.SetNormals(deckNorms);
+                SetAllUVs(dMesh, deckUvs, deckVerts.Count);
+                dMesh.SetTriangles(deckTris, 0);
+                dMesh.RecalculateBounds();
+
+                var mf = piersGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = dMesh;
+                var mr = piersGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = pierDeckMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+
+            if (pileVerts.Count > 0)
+            {
+                var pGo = new GameObject("PierPilings");
+                pGo.transform.SetParent(piersGo.transform, false);
+
+                var pMesh = new Mesh { name = "PierPilings" };
+                if (pileVerts.Count > 65000) pMesh.indexFormat = IndexFormat.UInt32;
+                pMesh.SetVertices(pileVerts);
+                pMesh.SetNormals(pileNorms);
+                SetAllUVs(pMesh, pileUvs, pileVerts.Count);
+                pMesh.SetTriangles(pileTris, 0);
+                pMesh.RecalculateBounds();
+
+                var mf = pGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = pMesh;
+                var mr = pGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = pierPileMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.Off;
+                mr.receiveShadows = true;
+            }
+        }
+
+        static Vector2 RotatePoint(float lx, float lz, float cs, float sn, float cx, float cz)
+        {
+            return new Vector2(cx + lx * cs - lz * sn, cz + lx * sn + lz * cs);
+        }
+
+        static void AddPierFascia(List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> tris,
+                                  Vector3 aTop, Vector3 bTop)
+        {
+            Vector3 aBot = new Vector3(aTop.x, WaterLevelY, aTop.z);
+            Vector3 bBot = new Vector3(bTop.x, WaterLevelY, bTop.z);
+            Vector3 n = Vector3.Cross(bBot - aBot, aTop - aBot).normalized;
+
+            int b = verts.Count;
+            verts.Add(aTop); norms.Add(n); uvs.Add(new Vector2(0, 1));
+            verts.Add(aBot); norms.Add(n); uvs.Add(new Vector2(0, 0));
+            verts.Add(bBot); norms.Add(n); uvs.Add(new Vector2(1, 0));
+            verts.Add(bTop); norms.Add(n); uvs.Add(new Vector2(1, 1));
+
+            tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
+            tris.Add(b); tris.Add(b + 2); tris.Add(b + 3);
+        }
+
+        static void AddPiling(List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> tris,
+                              float wx, float wz)
+        {
+            float r = 0.45f;
+            Vector3 pTop = CityFrame.ToUnity(wx, 0.4f, wz);
+            Vector3 pBot = CityFrame.ToUnity(wx, LandBottomY, wz);
+
+            int b = verts.Count;
+            // 4-sided timber pile
+            Vector3[] cTop = new[]
+            {
+                pTop + new Vector3(-r, 0, -r), pTop + new Vector3(r, 0, -r),
+                pTop + new Vector3(r, 0, r), pTop + new Vector3(-r, 0, r)
+            };
+            Vector3[] cBot = new[]
+            {
+                pBot + new Vector3(-r, 0, -r), pBot + new Vector3(r, 0, -r),
+                pBot + new Vector3(r, 0, r), pBot + new Vector3(-r, 0, r)
+            };
+
+            for (int i = 0; i < 4; i++)
+            {
+                int next = (i + 1) % 4;
+                int cur = verts.Count;
+                Vector3 n = Vector3.Cross(cBot[next] - cBot[i], cTop[i] - cBot[i]).normalized;
+                verts.Add(cTop[i]); norms.Add(n); uvs.Add(new Vector2(0, 1));
+                verts.Add(cBot[i]); norms.Add(n); uvs.Add(new Vector2(0, 0));
+                verts.Add(cBot[next]); norms.Add(n); uvs.Add(new Vector2(1, 0));
+                verts.Add(cTop[next]); norms.Add(n); uvs.Add(new Vector2(1, 1));
+
+                tris.Add(cur); tris.Add(cur + 1); tris.Add(cur + 2);
+                tris.Add(cur); tris.Add(cur + 2); tris.Add(cur + 3);
+            }
+        }
+
+        // =========================================================================
+        // 4. SIGNATURE BOROUGH TOWERS & SKYLINE HIGH-RISES
+        // =========================================================================
+        void BuildSignatureTowers(Transform parent)
+        {
+            var towersGo = new GameObject("BoroughSignatureTowers");
+            towersGo.transform.SetParent(parent, false);
+
+            var verts = new List<Vector3>(8192);
+            var norms = new List<Vector3>(8192);
+            var uvs   = new List<Vector2>(8192);
+            var tris  = new List<int>(16384);
+
+            // Landmark towers around Manhattan (converted from lon/lat in boroughs.js)
+            var towers = new[]
+            {
+                // Jersey City
+                new { name = "99 Hudson", lon = -74.0347f, lat = 40.7150f, w = 30f, d = 26f, h = 270f },
+                new { name = "Goldman Sachs", lon = -74.0337f, lat = 40.7144f, w = 40f, d = 30f, h = 238f },
+                new { name = "Urby JC", lon = -74.0348f, lat = 40.7182f, w = 28f, d = 24f, h = 213f },
+                new { name = "Trump Plaza JC", lon = -74.0370f, lat = 40.7198f, w = 28f, d = 22f, h = 163f },
+                new { name = "Newport Tower", lon = -74.0338f, lat = 40.7268f, w = 40f, d = 32f, h = 161f },
+                new { name = "Journal Square", lon = -74.0632f, lat = 40.7322f, w = 32f, d = 26f, h = 215f },
+                // Long Island City
+                new { name = "Skyline Tower", lon = -73.9446f, lat = 40.7480f, w = 30f, d = 30f, h = 237f },
+                new { name = "One Court Square", lon = -73.9430f, lat = 40.7471f, w = 42f, d = 36f, h = 205f },
+                new { name = "Queens Plaza Park", lon = -73.9392f, lat = 40.7509f, w = 30f, d = 26f, h = 228f },
+                // Downtown Brooklyn
+                new { name = "The Brooklyn Tower", lon = -73.9836f, lat = 40.6904f, w = 34f, d = 34f, h = 325f },
+                new { name = "Brooklyn Point", lon = -73.9822f, lat = 40.6913f, w = 28f, d = 28f, h = 219f },
+                new { name = "The Hub", lon = -73.9805f, lat = 40.6871f, w = 30f, d = 28f, h = 230f },
+                new { name = "Williamsburgh Savings Bank", lon = -73.9775f, lat = 40.6855f, w = 26f, d = 26f, h = 156f },
+                // Fort Lee & Palisades
+                new { name = "Fort Lee North", lon = -73.9712f, lat = 40.8512f, w = 26f, d = 44f, h = 140f },
+                new { name = "Fort Lee South", lon = -73.9722f, lat = 40.8500f, w = 26f, d = 44f, h = 140f },
+                new { name = "Galaxy Tower 1", lon = -74.0042f, lat = 40.7906f, w = 34f, d = 34f, h = 125f },
+                new { name = "Galaxy Tower 2", lon = -74.0036f, lat = 40.7914f, w = 34f, d = 34f, h = 125f },
+                new { name = "Galaxy Tower 3", lon = -74.0028f, lat = 40.7921f, w = 34f, d = 34f, h = 125f }
+            };
+
+            foreach (var tow in towers)
+            {
+                Vector2 pos = LonLatToWorld(tow.lon, tow.lat);
+                AddBoroughTower(verts, norms, uvs, tris, pos.x, pos.y, tow.w, tow.d, tow.h);
+            }
+
+            if (verts.Count > 0)
+            {
+                var mesh = new Mesh { name = "BoroughSignatureTowers" };
+                if (verts.Count > 65000) mesh.indexFormat = IndexFormat.UInt32;
+                mesh.SetVertices(verts);
+                mesh.SetNormals(norms);
+                SetAllUVs(mesh, uvs, verts.Count);
+                mesh.SetTriangles(tris, 0);
+                mesh.RecalculateBounds();
+
+                var mf = towersGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = mesh;
+                var mr = towersGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = boroughBuildingMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+        }
+
+        static Vector2 LonLatToWorld(float lon, float lat)
+        {
+            float dl = lon + 73.98185f;
+            float dp = lat - 40.75318f;
+            return new Vector2(-54.351f + 73845.537f * dl - 53872.251f * dp,
+                               69.424f - 40967.61f * dl - 97106.601f * dp);
+        }
+
+        static void AddBoroughTower(List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> tris,
+                                    float cx, float cz, float w, float d, float h)
+        {
+            float hx = w * 0.5f, hz = d * 0.5f;
+            Vector3 center = CityFrame.ToUnity(cx, h * 0.5f, cz);
+            Vector3 size = new Vector3(w, h, d);
+
+            Vector3[] c = new[]
+            {
+                center + new Vector3(-hx, -h * 0.5f, -hz),
+                center + new Vector3(hx, -h * 0.5f, -hz),
+                center + new Vector3(hx, -h * 0.5f, hz),
+                center + new Vector3(-hx, -h * 0.5f, hz),
+                center + new Vector3(-hx, h * 0.5f, -hz),
+                center + new Vector3(hx, h * 0.5f, -hz),
+                center + new Vector3(hx, h * 0.5f, hz),
+                center + new Vector3(-hx, h * 0.5f, hz)
+            };
+
+            int[][] faces = new[]
+            {
+                new[] { 0, 1, 5, 4 }, new[] { 2, 3, 7, 6 },
+                new[] { 3, 0, 4, 7 }, new[] { 1, 2, 6, 5 },
+                new[] { 4, 5, 6, 7 }
+            };
+            Vector3[] fn = new[]
+            {
+                Vector3.back, Vector3.forward, Vector3.left, Vector3.right, Vector3.up
+            };
+
+            for (int f = 0; f < 5; f++)
+            {
+                int b = verts.Count;
+                for (int v = 0; v < 4; v++)
+                {
+                    verts.Add(c[faces[f][v]]);
+                    norms.Add(fn[f]);
+                    uv0To(uvs, v);
+                }
+                tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
+                tris.Add(b); tris.Add(b + 2); tris.Add(b + 3);
+            }
+        }
+
+        static void uv0To(List<Vector2> uvs, int v)
+        {
+            uvs.Add(new Vector2((v == 1 || v == 2) ? 1f : 0f, (v >= 2) ? 1f : 0f));
+        }
+
+        // =========================================================================
+        // 5. BRIDGES (East River Bridges & Outer Bridges)
+        // =========================================================================
+        void BuildBridges(NycGeoData geo, Transform parent)
+        {
+            var bridgesGo = new GameObject("IconicBridges");
+            bridgesGo.transform.SetParent(parent, false);
+
+            var steelVerts = new List<Vector3>(8192);
+            var steelNorms = new List<Vector3>(8192);
+            var steelUvs   = new List<Vector2>(8192);
+            var steelTris  = new List<int>(16384);
+
+            var stoneVerts = new List<Vector3>(4096);
+            var stoneNorms = new List<Vector3>(4096);
+            var stoneUvs   = new List<Vector2>(4096);
+            var stoneTris  = new List<int>(8192);
+
+            // Brooklyn Bridge (Gothic Stone Towers & Suspended Spans)
+            BuildSuspensionBridge(stoneVerts, stoneNorms, stoneUvs, stoneTris,
+                                  steelVerts, steelNorms, steelUvs, steelTris,
+                                  start: new Vector2(408f, 4976f), end: new Vector2(1637f, 5322f),
+                                  towerH: 84f, deckW: 26f, stoneTowers: true);
+
+            // Manhattan Bridge (Blue Steel Towers)
+            BuildSuspensionBridge(steelVerts, steelNorms, steelUvs, steelTris,
+                                  steelVerts, steelNorms, steelUvs, steelTris,
+                                  start: new Vector2(903f, 4217f), end: new Vector2(1979f, 5042f),
+                                  towerH: 102f, deckW: 36f, stoneTowers: false);
+
+            // Williamsburg Bridge (Lattice Truss)
+            BuildSuspensionBridge(steelVerts, steelNorms, steelUvs, steelTris,
+                                  steelVerts, steelNorms, steelUvs, steelTris,
+                                  start: new Vector2(1565f, 3666f), end: new Vector2(3092f, 3487f),
+                                  towerH: 94f, deckW: 36f, stoneTowers: false);
+
+            // Queensboro Bridge (Cantilever Truss spanning over Roosevelt Island)
+            BuildCantileverBridge(steelVerts, steelNorms, steelUvs, steelTris,
+                                  stoneVerts, stoneNorms, stoneUvs, stoneTris,
+                                  start: new Vector2(911f, -1425f), end: new Vector2(2125f, -1401f),
+                                  midRoosevelt: new Vector2(1480f, -1413f));
+
+            if (steelVerts.Count > 0)
+            {
+                var sGo = new GameObject("BridgeSteel");
+                sGo.transform.SetParent(bridgesGo.transform, false);
+                var sMesh = new Mesh { name = "BridgeSteel" };
+                if (steelVerts.Count > 65000) sMesh.indexFormat = IndexFormat.UInt32;
+                sMesh.SetVertices(steelVerts);
+                sMesh.SetNormals(steelNorms);
+                SetAllUVs(sMesh, steelUvs, steelVerts.Count);
+                sMesh.SetTriangles(steelTris, 0);
+                sMesh.RecalculateBounds();
+
+                var mf = sGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = sMesh;
+                var mr = sGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = bridgeSteelMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+
+            if (stoneVerts.Count > 0)
+            {
+                var stGo = new GameObject("BridgeMasonry");
+                stGo.transform.SetParent(bridgesGo.transform, false);
+                var stMesh = new Mesh { name = "BridgeMasonry" };
+                if (stoneVerts.Count > 65000) stMesh.indexFormat = IndexFormat.UInt32;
+                stMesh.SetVertices(stoneVerts);
+                stMesh.SetNormals(stoneNorms);
+                SetAllUVs(stMesh, stoneUvs, stoneVerts.Count);
+                stMesh.SetTriangles(stoneTris, 0);
+                stMesh.RecalculateBounds();
+
+                var mf = stGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = stMesh;
+                var mr = stGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = bridgeStoneMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+        }
+
+        static void BuildSuspensionBridge(List<Vector3> towerV, List<Vector3> towerN, List<Vector2> towerU, List<int> towerT,
+                                          List<Vector3> deckV, List<Vector3> deckN, List<Vector2> deckU, List<int> deckT,
+                                          Vector2 start, Vector2 end, float towerH, float deckW, bool stoneTowers)
+        {
+            Vector2 dir = (end - start).normalized;
+            Vector2 nrm = new Vector2(-dir.y, dir.x);
+            float totalLen = Vector2.Distance(start, end);
+
+            // Two main suspension towers at 1/3 and 2/3 of span
+            Vector2 t1 = start + dir * (totalLen * 0.33f);
+            Vector2 t2 = start + dir * (totalLen * 0.67f);
+
+            // Tower Pillars & Arches
+            foreach (var tp in new[] { t1, t2 })
+            {
+                float legOffset = deckW * 0.45f;
+                Vector2 l1 = tp + nrm * legOffset;
+                Vector2 l2 = tp - nrm * legOffset;
+
+                AddBoxSimple(towerV, towerN, towerU, towerT, l1.x, l1.y, towerH * 0.5f, 6f, 8f, towerH);
+                AddBoxSimple(towerV, towerN, towerU, towerT, l2.x, l2.y, towerH * 0.5f, 6f, 8f, towerH);
+                // Top cross strut
+                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, towerH - 3f, deckW + 6f, 6f, 6f);
+            }
+
+            // Roadway deck
+            float deckH = 40f;
+            float segLen = 25f;
+            int numSegs = Mathf.CeilToInt(totalLen / segLen);
+            for (int i = 0; i < numSegs; i++)
+            {
+                float tFrac = (i + 0.5f) / numSegs;
+                Vector2 p = start + dir * (totalLen * tFrac);
+                AddBoxSimple(deckV, deckN, deckU, deckT, p.x, p.y, deckH, deckW, segLen, 3f);
+            }
+        }
+
+        static void BuildCantileverBridge(List<Vector3> steelV, List<Vector3> steelN, List<Vector2> steelU, List<int> steelT,
+                                          List<Vector3> stoneV, List<Vector3> stoneN, List<Vector2> stoneU, List<int> stoneT,
+                                          Vector2 start, Vector2 end, Vector2 midRoosevelt)
+        {
+            Vector2 dir = (end - start).normalized;
+            float totalLen = Vector2.Distance(start, end);
+
+            // Queensboro bridge has 4 massive towers (Manhattan, 2 on Roosevelt Island, Queens)
+            Vector2 p1 = start + dir * 80f;
+            Vector2 p2 = midRoosevelt - dir * 60f;
+            Vector2 p3 = midRoosevelt + dir * 60f;
+            Vector2 p4 = end - dir * 80f;
+
+            foreach (var p in new[] { p1, p2, p3, p4 })
+            {
+                AddBoxSimple(stoneV, stoneN, stoneU, stoneT, p.x, p.y, 15f, 22f, 16f, 30f);
+                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 65f, 18f, 14f, 75f);
+            }
+
+            // Continuous truss deck
+            float segLen = 30f;
+            int numSegs = Mathf.CeilToInt(totalLen / segLen);
+            for (int i = 0; i < numSegs; i++)
+            {
+                float tFrac = (i + 0.5f) / numSegs;
+                Vector2 p = start + dir * (totalLen * tFrac);
+                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 42f, 28f, segLen, 12f);
+            }
+        }
+
+        static void AddBoxSimple(List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> tris,
+                                 float cx, float cz, float cy, float sx, float sz, float sy)
+        {
+            float hx = sx * 0.5f, hz = sz * 0.5f, hy = sy * 0.5f;
+            Vector3 center = CityFrame.ToUnity(cx, cy, cz);
+
+            Vector3[] c = new[]
+            {
+                center + new Vector3(-hx, -hy, -hz), center + new Vector3(hx, -hy, -hz),
+                center + new Vector3(hx, -hy, hz), center + new Vector3(-hx, -hy, hz),
+                center + new Vector3(-hx, hy, -hz), center + new Vector3(hx, hy, -hz),
+                center + new Vector3(hx, hy, hz), center + new Vector3(-hx, hy, hz)
+            };
+
+            int[][] faces = new[]
+            {
+                new[] { 0, 1, 5, 4 }, new[] { 2, 3, 7, 6 },
+                new[] { 3, 0, 4, 7 }, new[] { 1, 2, 6, 5 },
+                new[] { 4, 5, 6, 7 }
+            };
+            Vector3[] fn = new[]
+            {
+                Vector3.back, Vector3.forward, Vector3.left, Vector3.right, Vector3.up
+            };
+
+            for (int f = 0; f < 5; f++)
+            {
+                int b = verts.Count;
+                for (int v = 0; v < 4; v++)
+                {
+                    verts.Add(c[faces[f][v]]);
+                    norms.Add(fn[f]);
+                    uv0To(uvs, v);
+                }
+                tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
+                tris.Add(b); tris.Add(b + 2); tris.Add(b + 3);
+            }
+        }
+
+        // =========================================================================
+        // 6. HARBOR LANDMARKS (Statue of Liberty & Governors Island)
+        // =========================================================================
+        void BuildHarborLandmarks(Transform parent)
+        {
+            var harborGo = new GameObject("HarborLandmarks");
+            harborGo.transform.SetParent(parent, false);
+
+            var verts = new List<Vector3>(4096);
+            var norms = new List<Vector3>(4096);
+            var uvs   = new List<Vector2>(4096);
+            var tris  = new List<int>(8192);
+
+            // Statue of Liberty (Liberty Island)
+            Vector2 solPos = LonLatToWorld(-74.0445f, 40.68925f);
+            // 11-pointed star fort base (approximated by stepped octagon)
+            AddBoxSimple(verts, norms, uvs, tris, solPos.x, solPos.y, 6f, 60f, 60f, 12f);
+            // Classical stone pedestal (47m tall)
+            AddBoxSimple(verts, norms, uvs, tris, solPos.x, solPos.y, 25f, 22f, 22f, 28f);
+            AddBoxSimple(verts, norms, uvs, tris, solPos.x, solPos.y, 42f, 16f, 16f, 8f);
+            // Copper Statue (46m tall)
+            AddBoxSimple(verts, norms, uvs, tris, solPos.x, solPos.y, 62f, 9f, 9f, 32f);
+            // Torch Arm & Spire
+            AddBoxSimple(verts, norms, uvs, tris, solPos.x + 3f, solPos.y, 84f, 2.5f, 2.5f, 16f);
+
+            // Governors Island - Castle Williams circular red sandstone fortress
+            Vector2 cwPos = LonLatToWorld(-74.0195f, 40.6922f);
+            AddBoxSimple(verts, norms, uvs, tris, cwPos.x, cwPos.y, 7f, 48f, 48f, 14f);
+
+            if (verts.Count > 0)
+            {
+                var mesh = new Mesh { name = "HarborLandmarks" };
+                mesh.SetVertices(verts);
+                mesh.SetNormals(norms);
+                SetAllUVs(mesh, uvs, verts.Count);
+                mesh.SetTriangles(tris, 0);
+                mesh.RecalculateBounds();
+
+                var mf = harborGo.AddComponent<MeshFilter>();
+                mf.sharedMesh = mesh;
+                var mr = harborGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = statueCopperMaterial;
+                mr.shadowCastingMode = ShadowCastingMode.On;
+                mr.receiveShadows = true;
+            }
+        }
+
+        void EnsureMaterials()
+        {
+            if (landMaterial == null) landMaterial = MakeMaterial("Borough_Land", new Color(0.42f, 0.44f, 0.40f), 0.05f, 0.0f);
+            if (bulkheadMaterial == null) bulkheadMaterial = MakeMaterial("Borough_Bulkhead", new Color(0.50f, 0.48f, 0.45f), 0.15f, 0.0f);
+            if (palisadesMaterial == null) palisadesMaterial = MakeMaterial("Borough_Palisades", new Color(0.38f, 0.42f, 0.35f), 0.10f, 0.0f);
+            if (boroughBuildingMaterial == null) boroughBuildingMaterial = MakeMaterial("Borough_Building", new Color(0.68f, 0.66f, 0.62f), 0.20f, 0.0f);
+            if (bridgeSteelMaterial == null) bridgeSteelMaterial = MakeMaterial("Bridge_Steel", new Color(0.35f, 0.45f, 0.55f), 0.50f, 0.60f);
+            if (bridgeStoneMaterial == null) bridgeStoneMaterial = MakeMaterial("Bridge_Stone", new Color(0.60f, 0.58f, 0.54f), 0.15f, 0.0f);
+            if (pierDeckMaterial == null) pierDeckMaterial = MakeMaterial("Pier_Deck", new Color(0.58f, 0.56f, 0.52f), 0.10f, 0.0f);
+            if (pierPileMaterial == null) pierPileMaterial = MakeMaterial("Pier_Piling", new Color(0.24f, 0.22f, 0.20f), 0.05f, 0.0f);
+            if (statueCopperMaterial == null) statueCopperMaterial = MakeMaterial("Statue_Copper", new Color(0.36f, 0.62f, 0.54f), 0.35f, 0.20f);
+        }
+
+        static void SetAllUVs(Mesh mesh, List<Vector2> uv0, int count)
+        {
+            var dummy = new List<Vector2>(count);
+            for (int i = 0; i < count; i++) dummy.Add(Vector2.zero);
+            mesh.SetUVs(0, uv0 != null && uv0.Count == count ? uv0 : dummy);
+            mesh.SetUVs(1, dummy);
+            mesh.SetUVs(2, dummy);
+            mesh.SetUVs(3, dummy);
+        }
+
+        static Material MakeMaterial(string name, Color color, float smoothness, float metallic)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            var mat = new Material(shader) { name = name };
+            mat.color = color;
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", metallic);
+            return mat;
+        }
+    }
+}

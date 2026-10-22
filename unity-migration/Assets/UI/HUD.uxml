@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <Style src="HUD.uss" />
+
+    <ui:VisualElement name="hud-root" class="hud-root" picking-mode="Ignore">
+
+        <!-- ============================ TOP LEFT: brand + FPS ============================ -->
+        <ui:VisualElement class="hud top-left">
+            <ui:VisualElement class="panel brand">
+                <ui:Label text="NY" class="mta-bullet" />
+                <ui:VisualElement class="brand-titles">
+                    <ui:Label text="Slop New York" class="brand-title" />
+                    <ui:VisualElement class="brand-sub">
+                        <ui:Label text="Unity URP · " class="brand-sub-text" />
+                        <ui:Label name="fps" text="60" class="fps" />
+                        <ui:Label text=" fps" class="brand-sub-text" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============================ TOP RIGHT: toolbar =============================== -->
+        <ui:VisualElement class="hud top-right">
+            <ui:VisualElement class="panel toolbar">
+                <ui:VisualElement class="time-switch">
+                    <ui:Button name="time-golden" class="time-btn active" text="Golden" />
+                    <ui:Button name="time-midday" class="time-btn" text="Midday" />
+                    <ui:Button name="time-twilight" class="time-btn" text="Blue" />
+                    <ui:Button name="time-midnight" class="time-btn" text="Night" />
+                </ui:VisualElement>
+                <ui:VisualElement class="divider" />
+                <ui:Button name="btn-teleport" class="tool-btn" text="Teleport" />
+                <ui:Button name="btn-map" class="tool-btn" text="Map  M" />
+                <ui:VisualElement class="divider" />
+                <ui:Button name="btn-hud" class="tool-btn icon-only" text="H" />
+            </ui:VisualElement>
+
+            <!-- Teleport destinations -->
+            <ui:VisualElement name="teleport-popover" class="popover" picking-mode="Position">
+                <ui:Label text="Teleport to" class="pop-title" />
+                <ui:Button name="tp-empire" class="pop-item" text="Empire State Building" />
+                <ui:Button name="tp-timessq" class="pop-item" text="Times Square" />
+                <ui:Button name="tp-chrysler" class="pop-item" text="Chrysler Building" />
+                <ui:Button name="tp-grandcentral" class="pop-item" text="Grand Central Terminal" />
+                <ui:Button name="tp-bryant" class="pop-item" text="Bryant Park" />
+                <ui:Button name="tp-flatiron" class="pop-item" text="Flatiron Building" />
+                <ui:Button name="tp-centralpark" class="pop-item" text="Central Park" />
+                <ui:Button name="tp-owtc" class="pop-item" text="One World Trade Center" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============================ BOTTOM LEFT: signs + radar ======================= -->
+        <ui:VisualElement class="hud bottom-left">
+            <ui:VisualElement class="location">
+                <ui:Label name="location-place" text="" class="location-place" />
+                <ui:Label name="location-signs" text="" class="street-sign" />
+            </ui:VisualElement>
+            <ui:VisualElement name="radar" class="radar" picking-mode="Position">
+                <ui:VisualElement name="minimap-map" class="minimap-map" picking-mode="Ignore" />
+                <ui:Label name="minimap-player" text="▲" class="minimap-player" picking-mode="Ignore" />
+                <ui:Label text="N" class="radar-north" picking-mode="Ignore" />
+                <ui:Label text="M" class="radar-key" picking-mode="Ignore" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============================ BOTTOM CENTER: hints + modes ===================== -->
+        <ui:VisualElement class="hud bottom-center">
+            <ui:Label name="controls-hint" text="WASD drive · Shift boost · Drag orbit" class="controls-hint" />
+            <ui:VisualElement class="panel mode-switch">
+                <ui:VisualElement name="mode-indicator" class="mode-indicator" picking-mode="Ignore" />
+                <ui:Button name="mode-person" class="mode-btn" text="Walk">
+                    <ui:Label text="1" class="kbd" />
+                </ui:Button>
+                <ui:Button name="mode-car" class="mode-btn active" text="Drive">
+                    <ui:Label text="2" class="kbd" />
+                </ui:Button>
+                <ui:Button name="mode-cyclist" class="mode-btn" text="Cycle">
+                    <ui:Label text="3" class="kbd" />
+                </ui:Button>
+                <ui:Button name="mode-helicopter" class="mode-btn" text="Fly">
+                    <ui:Label text="4" class="kbd" />
+                </ui:Button>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============================ BOTTOM RIGHT: cluster =========================== -->
+        <ui:VisualElement class="hud bottom-right">
+            <ui:VisualElement class="panel cluster">
+                <ui:VisualElement class="gauge">
+                    <ui:VisualElement class="gauge-top">
+                        <ui:Label name="mode-label" text="NYC Yellow Taxi" class="gauge-label" />
+                        <ui:VisualElement name="altitude-row" class="gauge-alt">
+                            <ui:Label text="ALT " class="gauge-alt-label" />
+                            <ui:Label name="altitude" text="0" class="gauge-alt-value" />
+                            <ui:Label text=" ft" class="gauge-alt-label" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="gauge-speed">
+                        <ui:Label name="speed" text="0" class="gauge-number" />
+                        <ui:Label text="mph" class="gauge-unit" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="gauge-meter">
+                        <ui:VisualElement name="speed-meter" class="gauge-meter-fill" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement class="camera-switch">
+                    <ui:Button name="cam-prev" class="icon-btn" text="‹" />
+                    <ui:Button name="cam-menu" class="camera-current" text="3rd-Person Chase" />
+                    <ui:Button name="cam-next" class="icon-btn" text="›" />
+                </ui:VisualElement>
+                <ui:Label name="camera-label" text="3rd-Person Chase" class="camera-caption" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="camera-popover" class="popover" picking-mode="Position">
+                <ui:Label text="Follow" class="pop-title" />
+                <ui:Button name="cam-chase" class="pop-item active" text="3rd-Person Chase" />
+                <ui:Button name="cam-action" class="pop-item" text="Low-Angle Action" />
+                <ui:Button name="cam-pov" class="pop-item" text="First-Person / Cockpit" />
+                <ui:Label text="Scenic" class="pop-title" />
+                <ui:Button name="cam-centralPark" class="pop-item" text="Central Park Oasis" />
+                <ui:Button name="cam-fifthAve" class="pop-item" text="5th Ave &amp; Empire State" />
+                <ui:Button name="cam-timesSquare" class="pop-item" text="Times Square Crossroads" />
+                <ui:Button name="cam-chryslerGCT" class="pop-item" text="42nd St · Chrysler &amp; GCT" />
+                <ui:Button name="cam-observatory" class="pop-item" text="Empire State 86th Deck" />
+                <ui:Button name="cam-bryantPark" class="pop-item" text="Bryant Park &amp; NYPL" />
+                <ui:Button name="cam-waterfront" class="pop-item" text="East River &amp; Skyline" />
+                <ui:Button name="cam-drone" class="pop-item" text="Auto-Director Aerial" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============================ FULL SCREEN ATLAS =============================== -->
+        <ui:VisualElement name="fullmap" class="fullmap" picking-mode="Position">
+            <ui:VisualElement name="fullmap-canvas-wrap" class="fullmap-canvas-wrap">
+                <ui:VisualElement name="fullmap-map" class="fullmap-map" picking-mode="Ignore" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="fullmap-header">
+                <ui:VisualElement class="panel fullmap-title">
+                    <ui:Label text="NY" class="mta-bullet" />
+                    <ui:VisualElement>
+                        <ui:Label text="Manhattan Street Atlas" class="fullmap-h2" />
+                        <ui:Label name="fullmap-player-info" text="You are at 5th Ave &amp; 42nd St" class="fullmap-sub" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:TextField name="fullmap-search" class="fullmap-search" label="" />
+                <ui:Button name="fullmap-close" class="tool-btn" text="Close  Esc" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="fullmap-results" class="fullmap-results" picking-mode="Position" />
+
+            <ui:Label name="fullmap-hint" class="fullmap-hint"
+                      text="Click anywhere to teleport · Drag to pan · Scroll to zoom" />
+        </ui:VisualElement>
+
+        <!-- Touch Controls Layer (Virtual Joystick & Action Buttons) -->
+        <ui:VisualElement name="touch-controls" class="touch-controls" picking-mode="Ignore">
+            <ui:VisualElement name="touch-movement" class="touch-movement" picking-mode="Position">
+                <ui:VisualElement name="touch-stick" class="touch-stick" picking-mode="Position">
+                    <ui:VisualElement name="touch-stick-knob" class="touch-stick-knob" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:Label name="touch-caption" class="touch-caption" text="Move &amp; steer" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="touch-actions" class="touch-actions" picking-mode="Position">
+                <ui:Button name="touch-btn-up" class="touch-action" text="↑ Jump" />
+                <ui:Button name="touch-btn-down" class="touch-action" text="↓ Descend" />
+                <ui:Button name="touch-btn-boost" class="touch-action is-boost" text="⚡ Boost" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

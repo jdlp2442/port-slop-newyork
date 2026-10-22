@@ -1,0 +1,341 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Nyc.Core;
+using Nyc.Data;
+
+namespace Nyc.Gameplay.Pedestrians
+{
+    /// <summary>
+    /// Sidewalk crowd rendered with one DrawMeshInstancedIndirect call.
+    ///
+    /// Walkers follow the perimeter of the real curb islands (GEO.blocks polygons), offset 1.9 m
+    /// inward onto the sidewalk, which reproduces the original's "people walking around the block"
+    /// without a navmesh. Per-person gait phase / speed / scale / tint live in a StructuredBuffer
+    /// read by Nyc/Pedestrian, which swings the six body parts in the vertex shader.
+    ///
+    /// The set is rebuilt when the camera moves 45 m, so only blocks around the viewer are
+    /// simulated (the original does the same with PED_RADIUS = 320 m).
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class PedestrianCrowd : MonoBehaviour
+    {
+        [Header("Rendering")]
+        public Material material;
+        public int maxWalkers = 1200;
+        public float radius = 320f;
+        public float rebuildDistance = 45f;
+        public float sidewalkInset = 1.9f;
+
+        [Header("References")]
+        public Camera viewCamera;
+        public ThirdPersonControllerManager controllers;
+
+        [Header("Stats")]
+        public int walkerCount;
+        public int blockCount;
+
+        struct Walker
+        {
+            public int Block;
+            public float S;
+            public float Dir;
+            public float Speed;
+            public float Phase;
+            public float Scale;
+            public Vector4 Tint;
+        }
+
+        struct PedInstance
+        {
+            public Vector4 PosHeading;
+            public Vector4 Params;
+            public Vector4 Tint;
+        }
+
+        static readonly Vector4[] Palette =
+        {
+            new Vector4(0.16f, 0.18f, 0.22f, 1f),
+            new Vector4(0.35f, 0.22f, 0.18f, 1f),
+            new Vector4(0.55f, 0.50f, 0.42f, 1f),
+            new Vector4(0.22f, 0.30f, 0.24f, 1f),
+            new Vector4(0.62f, 0.20f, 0.18f, 1f),
+            new Vector4(0.20f, 0.26f, 0.38f, 1f),
+            new Vector4(0.72f, 0.68f, 0.60f, 1f),
+            new Vector4(0.12f, 0.12f, 0.13f, 1f)
+        };
+
+        Mesh _mesh;
+        Walker[] _walkers;
+        PedInstance[] _data;
+        ComputeBuffer _instanceBuffer;
+        ComputeBuffer _argsBuffer;
+        readonly int[] _args = new int[5];
+        Bounds _bounds;
+        Vector2 _lastBuild = new Vector2(float.MaxValue, float.MaxValue);
+        bool _ready;
+        System.Random _rng = new System.Random(20261022);
+
+        void Awake() => EnsureInit();
+
+        void EnsureInit()
+        {
+            if (_ready) return;
+            if (!material) material = new Material(Shader.Find("Nyc/Pedestrian"));
+            if (!viewCamera) viewCamera = Camera.main;
+            if (!controllers) controllers = FindFirstObjectByType<ThirdPersonControllerManager>();
+
+            _mesh = BuildWalkerMesh();
+            _walkers = new Walker[maxWalkers];
+            _data = new PedInstance[maxWalkers];
+
+            _instanceBuffer = new ComputeBuffer(maxWalkers, 48, ComputeBufferType.Structured);
+            _argsBuffer = new ComputeBuffer(1, 5 * sizeof(int), ComputeBufferType.IndirectArguments);
+
+            _bounds = new Bounds(Vector3.zero, Vector3.one * 2000f);
+            _ready = true;
+        }
+
+        void Update()
+        {
+            if (!_ready) EnsureInit();
+            if (!_ready || CityConfig.Geo == null) return;
+
+            Vector2 focus = Focus();
+            if (Vector2.Distance(focus, _lastBuild) > rebuildDistance) Rebuild(focus);
+
+            Tick(Time.deltaTime, focus);
+            Draw();
+        }
+
+        /// <summary>Rebuild the walker set around the current focus (tooling / teleport).</summary>
+        public void RebuildNow()
+        {
+            EnsureInit();
+            if (CityConfig.Geo != null) Rebuild(Focus());
+        }
+
+        // ------------------------------------------------------------------ simulation
+
+        void Tick(float dt, Vector2 focus)
+        {
+            var geo = CityConfig.Geo;
+
+            for (int i = 0; i < walkerCount; i++)
+            {
+                Walker w = _walkers[i];
+                BlockRec block = geo.Blocks[w.Block];
+                float perimeter = Perimeter(block.Poly);
+                if (perimeter < 1f) continue;
+
+                w.S += w.Dir * w.Speed * dt;
+                if (w.S > perimeter) w.S -= perimeter;
+                else if (w.S < 0f) w.S += perimeter;
+
+                w.Phase += dt * (2.4f + w.Speed * 2.2f);
+                _walkers[i] = w;
+
+                SampleBlock(block, w.S, sidewalkInset, out Vector2 pos, out Vector2 tangent);
+                if (w.Dir < 0f) tangent = -tangent;
+
+                float heading = Mathf.Atan2(tangent.x, tangent.y);   // source heading
+                _data[i] = new PedInstance
+                {
+                    PosHeading = new Vector4(pos.x, CityFrame.SidewalkHeight, -pos.y, -heading),
+                    Params = new Vector4(w.Phase, w.Speed, w.Scale, 0f),
+                    Tint = w.Tint
+                };
+            }
+        }
+
+        void Draw()
+        {
+            if (walkerCount == 0) return;
+
+            _instanceBuffer.SetData(_data, 0, 0, walkerCount);
+            material.SetBuffer("_Instances", _instanceBuffer);
+
+            _args[0] = (int)_mesh.GetIndexCount(0);
+            _args[1] = walkerCount;
+            _args[2] = 0;
+            _args[3] = 0;
+            _args[4] = 0;
+            _argsBuffer.SetData(_args);
+            Vector3 centre = viewCamera ? viewCamera.transform.position : Vector3.zero;
+            _bounds.center = centre;
+            _bounds.size = new Vector3(radius * 2.5f, 400f, radius * 2.5f);
+
+            Graphics.DrawMeshInstancedIndirect(_mesh, 0, material, _bounds, _argsBuffer);
+        }
+
+        // ------------------------------------------------------------------ population
+
+        void Rebuild(Vector2 focus)
+        {
+            _lastBuild = focus;
+            var geo = CityConfig.Geo;
+            walkerCount = 0;
+            blockCount = 0;
+
+            for (int i = 0; i < geo.Blocks.Count && walkerCount < maxWalkers; i++)
+            {
+                BlockRec block = geo.Blocks[i];
+                if (block.Poly == null || block.Poly.Length < 3) continue;
+                if (Vector2.Distance(block.Center, focus) > radius) continue;
+
+                float perimeter = Perimeter(block.Poly);
+                if (perimeter < 25f) continue;
+
+                blockCount++;
+                int n = Mathf.Clamp(Mathf.RoundToInt(perimeter / 30f), 2, 18);
+
+                for (int k = 0; k < n && walkerCount < maxWalkers; k++)
+                {
+                    _walkers[walkerCount++] = new Walker
+                    {
+                        Block = i,
+                        S = (float)_rng.NextDouble() * perimeter,
+                        Dir = _rng.Next(0, 2) == 0 ? -1f : 1f,
+                        Speed = 1.05f + (float)_rng.NextDouble() * 0.65f,
+                        Phase = (float)_rng.NextDouble() * Mathf.PI * 2f,
+                        Scale = 0.92f + (float)_rng.NextDouble() * 0.16f,
+                        Tint = Palette[_rng.Next(0, Palette.Length)]
+                    };
+                }
+            }
+        }
+
+        static float Perimeter(Vector2[] poly)
+        {
+            float p = 0f;
+            for (int i = 0; i < poly.Length; i++)
+                p += Vector2.Distance(poly[i], poly[(i + 1) % poly.Length]);
+            return p;
+        }
+
+        static void SampleBlock(BlockRec block, float s, float inset, out Vector2 pos, out Vector2 tangent)
+        {
+            Vector2[] poly = block.Poly;
+            float acc = 0f;
+            pos = poly[0];
+            tangent = Vector2.up;
+
+            for (int i = 0; i < poly.Length; i++)
+            {
+                Vector2 a = poly[i];
+                Vector2 b = poly[(i + 1) % poly.Length];
+                float len = Vector2.Distance(a, b);
+                if (len < 0.001f) continue;
+
+                if (s <= acc + len)
+                {
+                    float t = (s - acc) / len;
+                    pos = Vector2.Lerp(a, b, t);
+                    tangent = (b - a) / len;
+                    Vector2 inward = (block.Center - pos).normalized;
+                    pos += inward * inset;
+                    return;
+                }
+                acc += len;
+            }
+        }
+
+        Vector2 Focus()
+        {
+            if (controllers && controllers.Active != null) return controllers.Active.Position;
+            if (viewCamera)
+            {
+                Vector3 p = viewCamera.transform.position;
+                return new Vector2(p.x, -p.z);
+            }
+            return Vector2.zero;
+        }
+
+        void OnDestroy()
+        {
+            _instanceBuffer?.Release();
+            _argsBuffer?.Release();
+        }
+
+        // ------------------------------------------------------------------ mesh
+
+        static Mesh BuildWalkerMesh()
+        {
+            var b = new MeshBuilder();
+            b.Limb(new Vector3(0f, 1.18f, 0f), new Vector3(0.42f, 0.62f, 0.26f), 0, 0f);
+            b.Limb(new Vector3(0f, 1.62f, 0f), new Vector3(0.22f, 0.24f, 0.22f), 1, 0f);
+            b.Limb(new Vector3(-0.27f, 1.15f, 0f), new Vector3(0.11f, 0.58f, 0.13f), 2, 1.44f);
+            b.Limb(new Vector3(0.27f, 1.15f, 0f), new Vector3(0.11f, 0.58f, 0.13f), 3, 1.44f);
+            b.Limb(new Vector3(-0.11f, 0.45f, 0f), new Vector3(0.15f, 0.86f, 0.17f), 4, 0.88f);
+            b.Limb(new Vector3(0.11f, 0.45f, 0f), new Vector3(0.15f, 0.86f, 0.17f), 5, 0.88f);
+            return b.ToMesh("PedestrianWalker");
+        }
+
+        sealed class MeshBuilder
+        {
+            readonly List<Vector3> _v = new List<Vector3>(128);
+            readonly List<Vector3> _n = new List<Vector3>(128);
+            readonly List<Vector2> _uv0 = new List<Vector2>(128);
+            readonly List<Vector2> _uv1 = new List<Vector2>(128);
+            readonly List<int> _t = new List<int>(256);
+
+            public void Limb(Vector3 centre, Vector3 size, int part, float pivotY)
+            {
+                Vector3 h = size * 0.5f;
+                Vector3 min = centre - h, max = centre + h;
+
+                Quad(new Vector3(min.x, min.y, min.z), new Vector3(min.x, min.y, max.z),
+                     new Vector3(min.x, max.y, max.z), new Vector3(min.x, max.y, min.z), Vector3.left, part, pivotY, size.y);
+                Quad(new Vector3(max.x, min.y, max.z), new Vector3(max.x, min.y, min.z),
+                     new Vector3(max.x, max.y, min.z), new Vector3(max.x, max.y, max.z), Vector3.right, part, pivotY, size.y);
+                Quad(new Vector3(min.x, min.y, min.z), new Vector3(max.x, min.y, min.z),
+                     new Vector3(max.x, max.y, min.z), new Vector3(min.x, max.y, min.z), Vector3.back, part, pivotY, size.y);
+                Quad(new Vector3(max.x, min.y, max.z), new Vector3(min.x, min.y, max.z),
+                     new Vector3(min.x, max.y, max.z), new Vector3(max.x, max.y, max.z), Vector3.forward, part, pivotY, size.y);
+                Quad(new Vector3(min.x, max.y, min.z), new Vector3(min.x, max.y, max.z),
+                     new Vector3(max.x, max.y, max.z), new Vector3(max.x, max.y, min.z), Vector3.up, part, pivotY, size.y);
+            }
+
+            void Quad(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 n, int part, float pivotY, float height)
+            {
+                int i0 = Add(p0, n, part, pivotY, height);
+                int i1 = Add(p1, n, part, pivotY, height);
+                int i2 = Add(p2, n, part, pivotY, height);
+                int i3 = Add(p3, n, part, pivotY, height);
+
+                Vector3 cross = Vector3.Cross(_v[i1] - _v[i0], _v[i2] - _v[i0]);
+                if (Vector3.Dot(cross, n) >= 0f)
+                {
+                    _t.Add(i0); _t.Add(i1); _t.Add(i2);
+                    _t.Add(i0); _t.Add(i2); _t.Add(i3);
+                }
+                else
+                {
+                    _t.Add(i0); _t.Add(i2); _t.Add(i1);
+                    _t.Add(i0); _t.Add(i3); _t.Add(i2);
+                }
+            }
+
+            int Add(Vector3 p, Vector3 n, int part, float pivotY, float height)
+            {
+                _v.Add(p);
+                _n.Add(n);
+                _uv0.Add(Vector2.zero);
+                float t = pivotY > 0f ? Mathf.Clamp01((pivotY - p.y) / Mathf.Max(0.01f, height)) : 0f;
+                _uv1.Add(new Vector2(part, t));
+                return _v.Count - 1;
+            }
+
+            public Mesh ToMesh(string name)
+            {
+                var mesh = new Mesh { name = name };
+                mesh.SetVertices(_v);
+                mesh.SetNormals(_n);
+                mesh.SetUVs(0, _uv0);
+                mesh.SetUVs(1, _uv1);
+                mesh.SetTriangles(_t, 0, false);
+                mesh.RecalculateBounds();
+                return mesh;
+            }
+        }
+    }
+}
