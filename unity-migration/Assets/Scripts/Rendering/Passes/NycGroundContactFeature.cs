@@ -2,12 +2,17 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000_0_OR_NEWER
+using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
+#endif
 
 namespace Nyc.Rendering.Passes
 {
     /// <summary>
     /// URP ScriptableRendererFeature for Screen-Space Contact Shadows & Ambient Occlusion.
     /// Anchors building foundations, curbs, and vehicle tires to the asphalt road surface.
+    /// Compatible with both Unity 6 RenderGraph and legacy/headless pipelines.
     /// </summary>
     public sealed class NycGroundContactFeature : ScriptableRendererFeature
     {
@@ -78,6 +83,29 @@ namespace Nyc.Rendering.Passes
             _tempRT = new RenderTargetIdentifier(TempRTId);
         }
 
+#if UNITY_6000_0_OR_NEWER
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+        {
+            if (_material == null) return;
+
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+
+            if (cameraData.isSceneViewCamera || !resourcesData.cameraColor.IsValid()) return;
+
+            _material.SetVector(AOParamsId, new Vector4(_settings.intensity, _settings.sampleRadius, _settings.depthBias, _settings.maxDistance));
+
+            TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
+            desc.name = "_GroundContactAOTemp";
+            desc.clearBuffer = false;
+            TextureHandle tempTex = renderGraph.CreateTexture(desc);
+
+            var blitParams = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, tempTex, _material, 0);
+            renderGraph.AddBlitPass(blitParams, ProfilerTag);
+
+            renderGraph.AddBlitPass(tempTex, resourcesData.cameraColor, Vector2.one, Vector2.zero, passName: "GroundContactAORestore");
+        }
+#else
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             if (_material == null) return;
@@ -99,5 +127,6 @@ namespace Nyc.Rendering.Passes
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
+#endif
     }
 }

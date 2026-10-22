@@ -220,6 +220,9 @@ namespace Nyc.EditorTools
             }
             var uiDoc = uiGo.GetComponent<UIDocument>();
             if (!uiDoc) uiDoc = uiGo.AddComponent<UIDocument>();
+            uiDoc.visualTreeAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Assets/UI/HUD.uxml");
+            if (uiDoc.visualTreeAsset == null)
+                Debug.LogWarning("[NYC] HUD.uxml was not found at Assets/UI/HUD.uxml; HUD will be empty until assigned.");
 
             var hudCtrl = uiGo.GetComponent<HUDController>();
             if (!hudCtrl) hudCtrl = uiGo.AddComponent<HUDController>();

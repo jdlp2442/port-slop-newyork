@@ -177,7 +177,7 @@ namespace Nyc.Core
 
                 if (CityConfig.Ready && CityConfig.Geo?.Manhattan != null)
                 {
-                    collisionWorld.SetIslandBounds(CityConfig.CentralParkBounds);
+                    collisionWorld.SetIslandBounds(CityConfig.ManhattanBounds);
                 }
             }
         }

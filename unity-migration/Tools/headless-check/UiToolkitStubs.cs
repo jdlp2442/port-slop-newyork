@@ -153,8 +153,15 @@ namespace UnityEngine.UIElements
         public void RegisterValueChangedCallback(EventCallback<ChangeEvent<string>> callback) { }
     }
 
+    public class VisualTreeAsset : ScriptableObject
+    {
+        public VisualElement CloneTree() => new VisualElement();
+        public VisualElement Instantiate() => new VisualElement();
+    }
+
     public class UIDocument : MonoBehaviour
     {
         public VisualElement rootVisualElement;
+        public VisualTreeAsset visualTreeAsset;
     }
 }

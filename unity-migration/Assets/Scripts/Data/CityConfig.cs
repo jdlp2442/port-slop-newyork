@@ -29,6 +29,7 @@ namespace Nyc.Core
         static readonly Dictionary<int, StreetRec> StreetByNumber = new Dictionary<int, StreetRec>(160);
         static readonly Dictionary<string, AvenueRec> AvenueById  = new Dictionary<string, AvenueRec>(32);
         static Vector4 centralPark;                 // minX, maxX, minZ, maxZ
+        static Vector4 manhattanBounds;              // minX, maxX, minZ, maxZ
 
         static Vector2[] broadwayLine;
         static float[] shoreWest, shoreEast;
@@ -47,6 +48,7 @@ namespace Nyc.Core
             foreach (var a in geo.Avenues) AvenueById[a.Id] = a;
 
             centralPark = geo.CentralPark?.Bounds ?? new Vector4(-845f, -13f, -5491f, -1397f);
+            manhattanBounds = ComputeBounds(geo.Manhattan);
             broadwayLine = geo.Broadway ?? Array.Empty<Vector2>();
 
             BuildShoreProfile(geo.Manhattan);
@@ -85,6 +87,22 @@ namespace Nyc.Core
         public static bool TryAvenue(string id, out AvenueRec avenue) => AvenueById.TryGetValue(id, out avenue);
 
         public static Vector4 CentralParkBounds => centralPark;
+        public static Vector4 ManhattanBounds => manhattanBounds;
+
+        static Vector4 ComputeBounds(Vector2[] ring)
+        {
+            if (ring == null || ring.Length == 0) return new Vector4(-2117f, 2569f, -7090f, 6512f);
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            for (int i = 0; i < ring.Length; i++)
+            {
+                minX = Mathf.Min(minX, ring[i].x);
+                maxX = Mathf.Max(maxX, ring[i].x);
+                minZ = Mathf.Min(minZ, ring[i].y);
+                maxZ = Mathf.Max(maxZ, ring[i].y);
+            }
+            return new Vector4(minX, maxX, minZ, maxZ);
+        }
 
         // ------------------------------------------------------------------ Broadway
 

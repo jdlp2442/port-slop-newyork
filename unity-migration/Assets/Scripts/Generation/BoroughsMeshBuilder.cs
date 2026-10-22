@@ -112,10 +112,16 @@ namespace Nyc.Generation
             {
                 if (pts == null || pts.Length < 3) continue;
 
+                // The generated New Jersey outline uses ±60000 sentinel points to
+                // close the map at the horizon. They are rasterization markers, not
+                // world coordinates; triangulating them creates a 120 km rectangle.
+                var trimmedPts = TrimHorizonSentinels(pts);
+                if (trimmedPts.Length < 3) continue;
+
                 // Triangulate top surface
                 var verts2D = new List<Vector2>();
                 var tris = new List<int>();
-                PolygonTriangulator.Triangulate(pts, null, verts2D, tris);
+                PolygonTriangulator.Triangulate(trimmedPts, null, verts2D, tris);
 
                 int baseTop = topVerts.Count;
                 for (int i = 0; i < verts2D.Count; i++)
@@ -203,6 +209,21 @@ namespace Nyc.Generation
                 mr.shadowCastingMode = ShadowCastingMode.On;
                 mr.receiveShadows = true;
             }
+        }
+
+        static Vector2[] TrimHorizonSentinels(Vector2[] points)
+        {
+            int valid = 0;
+            for (int i = 0; i < points.Length; i++)
+                if (Mathf.Abs(points[i].x) < 50000f && Mathf.Abs(points[i].y) < 50000f) valid++;
+
+            if (valid == points.Length) return points;
+            var trimmed = new Vector2[valid];
+            int w = 0;
+            for (int i = 0; i < points.Length; i++)
+                if (Mathf.Abs(points[i].x) < 50000f && Mathf.Abs(points[i].y) < 50000f)
+                    trimmed[w++] = points[i];
+            return trimmed;
         }
 
         // =========================================================================

@@ -2,6 +2,10 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000_0_OR_NEWER
+using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
+#endif
 
 namespace Nyc.Rendering.Passes
 {
@@ -9,6 +13,7 @@ namespace Nyc.Rendering.Passes
     /// URP ScriptableRendererFeature for Dual-Threshold Bloom with Peak Limiting.
     /// Recreates the WebGPU post-processing pipeline from slop-newyork-main/js/post-processing.js:
     /// preserves neon saturation, prevents blowout, and isolates Times Square billboards and vehicle lights.
+    /// Compatible with both Unity 6 RenderGraph and legacy/headless pipelines.
     /// </summary>
     public sealed class NycBloomFeature : ScriptableRendererFeature
     {
@@ -93,24 +98,8 @@ namespace Nyc.Rendering.Passes
             renderPassEvent = settings.passEvent;
         }
 
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        void UpdateMaterialParams()
         {
-            if (_material == null) return;
-
-            CommandBuffer cmd = CommandBufferPool.Get(ProfilerTag);
-
-            RenderTextureDescriptor desc = renderingData.cameraData.cameraTargetDescriptor;
-            desc.depthBufferBits = 0;
-
-            int downW = Mathf.Max(desc.width / 2, 1);
-            int downH = Mathf.Max(desc.height / 2, 1);
-
-            cmd.GetTemporaryRT(BloomPrefilterRT, downW, downH, 0, FilterMode.Bilinear);
-            cmd.GetTemporaryRT(BloomBlurHRT, downW, downH, 0, FilterMode.Bilinear);
-            cmd.GetTemporaryRT(BloomBlurVRT, downW, downH, 0, FilterMode.Bilinear);
-            cmd.GetTemporaryRT(BloomCompositeRT, desc.width, desc.height, 0, FilterMode.Bilinear);
-
-            // Update parameters from look if available
             float threshold = _settings.threshold;
             float intensity = _settings.intensity;
             Color balance = _settings.colorBalance;
@@ -132,6 +121,78 @@ namespace Nyc.Rendering.Passes
             _material.SetVector(ThresholdParamsId, new Vector4(threshold, _settings.softKnee, _settings.peakLimit, intensity));
             _material.SetVector(GradingParamsId, new Vector4(exposure, contrast, saturation, _settings.vignette));
             _material.SetVector(ColorBalanceId, balance);
+        }
+
+#if UNITY_6000_0_OR_NEWER
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+        {
+            if (_material == null) return;
+
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+
+            if (cameraData.isSceneViewCamera || !resourcesData.cameraColor.IsValid()) return;
+
+            UpdateMaterialParams();
+
+            TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
+            TextureDesc downDesc = desc;
+            downDesc.width = Mathf.Max(desc.width / 2, 1);
+            downDesc.height = Mathf.Max(desc.height / 2, 1);
+            downDesc.clearBuffer = false;
+
+            downDesc.name = "_BloomPrefilter";
+            TextureHandle prefilter = renderGraph.CreateTexture(downDesc);
+
+            downDesc.name = "_BloomBlurH";
+            TextureHandle blurH = renderGraph.CreateTexture(downDesc);
+
+            downDesc.name = "_BloomBlurV";
+            TextureHandle blurV = renderGraph.CreateTexture(downDesc);
+
+            desc.name = "_BloomComposite";
+            TextureHandle composite = renderGraph.CreateTexture(desc);
+
+            // 1. Prefilter
+            var p0 = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, prefilter, _material, 0);
+            renderGraph.AddBlitPass(p0, "BloomPrefilter");
+
+            // 2. Blur H
+            _material.SetVector(BlurOffsetId, new Vector4(1.0f / downDesc.width, 0f, 0f, 0f));
+            var p1 = new RenderGraphUtils.BlitMaterialParameters(prefilter, blurH, _material, 1);
+            renderGraph.AddBlitPass(p1, "BloomBlurH");
+
+            // 3. Blur V
+            _material.SetVector(BlurOffsetId, new Vector4(0f, 1.0f / downDesc.height, 0f, 0f));
+            var p2 = new RenderGraphUtils.BlitMaterialParameters(blurH, blurV, _material, 1);
+            renderGraph.AddBlitPass(p2, "BloomBlurV");
+
+            // 4. Composite
+            _material.SetTexture(BloomTexId, blurV);
+            var p3 = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, composite, _material, 2);
+            renderGraph.AddBlitPass(p3, "BloomComposite");
+
+            renderGraph.AddBlitPass(composite, resourcesData.cameraColor, Vector2.one, Vector2.zero, passName: "BloomRestore");
+        }
+#else
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            if (_material == null) return;
+
+            CommandBuffer cmd = CommandBufferPool.Get(ProfilerTag);
+
+            RenderTextureDescriptor desc = renderingData.cameraData.cameraTargetDescriptor;
+            desc.depthBufferBits = 0;
+
+            int downW = Mathf.Max(desc.width / 2, 1);
+            int downH = Mathf.Max(desc.height / 2, 1);
+
+            cmd.GetTemporaryRT(BloomPrefilterRT, downW, downH, 0, FilterMode.Bilinear);
+            cmd.GetTemporaryRT(BloomBlurHRT, downW, downH, 0, FilterMode.Bilinear);
+            cmd.GetTemporaryRT(BloomBlurVRT, downW, downH, 0, FilterMode.Bilinear);
+            cmd.GetTemporaryRT(BloomCompositeRT, desc.width, desc.height, 0, FilterMode.Bilinear);
+
+            UpdateMaterialParams();
 
             RenderTargetIdentifier source = "_CameraColorTexture";
 
@@ -159,6 +220,7 @@ namespace Nyc.Rendering.Passes
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
+#endif
 
         static T FindFirstObjectByType<T>() where T : UnityEngine.Object
         {

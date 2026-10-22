@@ -2,12 +2,17 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000_0_OR_NEWER
+using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
+#endif
 
 namespace Nyc.Rendering.Passes
 {
     /// <summary>
     /// URP ScriptableRendererFeature for low-altitude volumetric fog and atmospheric scattering.
     /// Simulates Rayleigh/Mie scattering along long avenues and over the Hudson/East River.
+    /// Compatible with both Unity 6 RenderGraph and legacy/headless pipelines.
     /// </summary>
     public sealed class AtmosphericScatteringFeature : ScriptableRendererFeature
     {
@@ -86,23 +91,8 @@ namespace Nyc.Rendering.Passes
             _tempRT = new RenderTargetIdentifier(TempRTId);
         }
 
-        public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
+        void UpdateMaterial()
         {
-            base.Configure(cmd, cameraTextureDescriptor);
-        }
-
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            if (_material == null) return;
-
-            CommandBuffer cmd = CommandBufferPool.Get(ProfilerTag);
-
-            RenderTextureDescriptor desc = renderingData.cameraData.cameraTargetDescriptor;
-            desc.depthBufferBits = 0;
-
-            cmd.GetTemporaryRT(TempRTId, desc.width, desc.height, 0, FilterMode.Bilinear);
-
-            // Sun & lighting state
             Vector3 sunDir = new Vector3(0.45f, 0.75f, 0.45f).normalized;
             Color sunColor = new Color(1.0f, 0.96f, 0.88f);
             float sunIntensity = 1.0f;
@@ -123,6 +113,43 @@ namespace Nyc.Rendering.Passes
 
             Color haze = _settings.hazeColor;
             _material.SetVector(HazeColorId, new Vector4(haze.r, haze.g, haze.b, _settings.inscatteringBoost));
+        }
+
+#if UNITY_6000_0_OR_NEWER
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+        {
+            if (_material == null) return;
+
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+
+            if (cameraData.isSceneViewCamera || !resourcesData.cameraColor.IsValid()) return;
+
+            UpdateMaterial();
+
+            TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
+            desc.name = "_AtmosphericScatteringTemp";
+            desc.clearBuffer = false;
+            TextureHandle tempTex = renderGraph.CreateTexture(desc);
+
+            var blitParams = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, tempTex, _material, 0);
+            renderGraph.AddBlitPass(blitParams, ProfilerTag);
+
+            renderGraph.AddBlitPass(tempTex, resourcesData.cameraColor, Vector2.one, Vector2.zero, passName: "AtmosphericScatteringRestore");
+        }
+#else
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            if (_material == null) return;
+
+            CommandBuffer cmd = CommandBufferPool.Get(ProfilerTag);
+
+            RenderTextureDescriptor desc = renderingData.cameraData.cameraTargetDescriptor;
+            desc.depthBufferBits = 0;
+
+            cmd.GetTemporaryRT(TempRTId, desc.width, desc.height, 0, FilterMode.Bilinear);
+
+            UpdateMaterial();
 
             RenderTargetIdentifier source = "_CameraColorTexture";
             cmd.Blit(source, _tempRT, _material, 0);
@@ -132,5 +159,6 @@ namespace Nyc.Rendering.Passes
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
+#endif
     }
 }
