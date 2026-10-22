@@ -88,6 +88,11 @@ namespace UnityEngine.Rendering
     public class ClampedFloatParameter : VolumeParameter<float>
     {
         public ClampedFloatParameter(float min, float max, bool overrideState = false) { }
+        public ClampedFloatParameter(float value, float min, float max, bool overrideState = false) { }
+    }
+    public class MinFloatParameter : VolumeParameter<float>
+    {
+        public MinFloatParameter(float v, float min, bool overrideState = false) { }
     }
     public class FloatParameter : VolumeParameter<float>
     {
@@ -102,11 +107,121 @@ namespace UnityEngine.Rendering
         public TonemappingModeParameter(TonemappingMode m, bool overrideState = false) { }
     }
     public enum TonemappingMode { None, Neutral, ACES }
+
+    public struct RenderTargetIdentifier
+    {
+        public int id;
+        public string name;
+        public RenderTargetIdentifier(int id) { this.id = id; this.name = null; }
+        public RenderTargetIdentifier(string name) { this.id = 0; this.name = name; }
+        public static implicit operator RenderTargetIdentifier(string name) => new RenderTargetIdentifier(name);
+        public static implicit operator RenderTargetIdentifier(int id) => new RenderTargetIdentifier(id);
+    }
+
+    public static class CommandBufferPool
+    {
+        public static CommandBuffer Get(string name = "") => new CommandBuffer { name = name };
+        public static void Release(CommandBuffer buffer) { }
+    }
+
+    public class CommandBuffer : IDisposable
+    {
+        public string name;
+        public void Blit(RenderTargetIdentifier src, RenderTargetIdentifier dst, Material mat = null, int pass = -1) { }
+        public void SetGlobalTexture(string name, RenderTargetIdentifier val) { }
+        public void SetGlobalTexture(int nameID, RenderTargetIdentifier val) { }
+        public void SetGlobalVector(string name, Vector4 val) { }
+        public void SetGlobalFloat(string name, float val) { }
+        public void SetGlobalColor(string name, Color val) { }
+        public void GetTemporaryRT(int nameID, int width, int height, int depthBuffer = 0, FilterMode filter = FilterMode.Point) { }
+        public void ReleaseTemporaryRT(int nameID) { }
+        public void Clear() { }
+        public void Dispose() { }
+    }
 }
 
 namespace UnityEngine.Rendering.Universal
 {
     using UnityEngine.Rendering;
+
+    public enum RenderPassEvent
+    {
+        BeforeRendering = 0,
+        BeforeRenderingShadows = 50,
+        AfterRenderingShadows = 100,
+        BeforeRenderingPrePasses = 150,
+        AfterRenderingPrePasses = 200,
+        BeforeRenderingGbuffer = 210,
+        AfterRenderingGbuffer = 220,
+        BeforeRenderingDeferredLights = 230,
+        AfterRenderingDeferredLights = 240,
+        BeforeRenderingOpaques = 250,
+        AfterRenderingOpaques = 300,
+        BeforeRenderingSkybox = 350,
+        AfterRenderingSkybox = 400,
+        BeforeRenderingTransparents = 450,
+        AfterRenderingTransparents = 500,
+        BeforeRenderingPostProcessing = 550,
+        AfterRenderingPostProcessing = 600,
+        AfterRendering = 1000
+    }
+
+    public abstract class ScriptableRenderPass
+    {
+        public RenderPassEvent renderPassEvent;
+        public virtual void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor) { }
+        public virtual void Execute(ScriptableRenderContext context, ref RenderingData renderingData) { }
+        public virtual void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData) { }
+        public virtual void OnCameraCleanup(CommandBuffer cmd) { }
+    }
+
+    public struct RenderingData
+    {
+        public CameraData cameraData;
+        public LightData lightData;
+    }
+
+    public struct CameraData
+    {
+        public Camera camera;
+        public RenderTextureDescriptor cameraTargetDescriptor;
+        public bool isSceneViewCamera;
+        public Matrix4x4 worldToCameraMatrix;
+    }
+
+    public struct LightData
+    {
+        public int mainLightIndex;
+        public bool supportsMainLightShadows;
+    }
+
+    public struct RenderTextureDescriptor
+    {
+        public int width;
+        public int height;
+        public int depthBufferBits;
+        public int msaaSamples;
+    }
+
+    public struct ScriptableRenderContext
+    {
+        public void ExecuteCommandBuffer(CommandBuffer cmd) { }
+    }
+
+    public abstract class ScriptableRendererFeature : ScriptableObject
+    {
+        public abstract void Create();
+        public abstract void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData);
+        public virtual void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData renderingData) { }
+        protected virtual void Dispose(bool disposing) { }
+    }
+
+    public class ScriptableRenderer
+    {
+        public RenderTargetIdentifier cameraColorTarget;
+        public RenderTargetIdentifier cameraDepthTarget;
+        public void EnqueuePass(ScriptableRenderPass pass) { }
+    }
 
     public class Bloom : VolumeComponent
     {
@@ -114,6 +229,8 @@ namespace UnityEngine.Rendering.Universal
         public ClampedFloatParameter threshold = new ClampedFloatParameter(0, 10);
         public ClampedFloatParameter scatter = new ClampedFloatParameter(0, 1);
         public ColorParameter tint = new ColorParameter(Color.white);
+        public ClampedFloatParameter clamp = new ClampedFloatParameter(65472f, 0f, 65472f);
+        public BoolParameter highQualityFiltering = new BoolParameter(false);
     }
 
     public class ColorAdjustments : VolumeComponent
@@ -134,6 +251,17 @@ namespace UnityEngine.Rendering.Universal
         public ClampedFloatParameter intensity = new ClampedFloatParameter(0, 1);
         public ClampedFloatParameter smoothness = new ClampedFloatParameter(0.01f, 1);
         public BoolParameter rounded = new BoolParameter(false);
+    }
+
+    public enum DepthOfFieldMode { Off, Gaussian, Bokeh }
+
+    public class DepthOfField : VolumeComponent
+    {
+        public VolumeParameter<DepthOfFieldMode> mode = new VolumeParameter<DepthOfFieldMode>();
+        public MinFloatParameter gaussianStart = new MinFloatParameter(10f, 0f);
+        public MinFloatParameter gaussianEnd = new MinFloatParameter(30f, 0f);
+        public ClampedFloatParameter gaussianMaxRadius = new ClampedFloatParameter(1f, 0.5f, 1.5f);
+        public BoolParameter highQualitySampling = new BoolParameter(false);
     }
 
     public class VolumeComponent : ScriptableObject { }

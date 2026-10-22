@@ -51,6 +51,7 @@ namespace Nyc.Gameplay.Traffic
             public float V0;
             public int NextLane;
             public Vector2 Position;
+            public float Y;
             public float Heading;
             public bool Active;
             public int Batch;
@@ -62,15 +63,34 @@ namespace Nyc.Gameplay.Traffic
         }
 
         static readonly Driver CarDriver = new Driver { a = 2.0f, b = 3.0f, T = 1.2f, s0 = 2.0f, aLat = 3.5f };
+        static readonly Driver TaxiDriver = new Driver { a = 2.4f, b = 3.2f, T = 1.1f, s0 = 1.8f, aLat = 3.8f };
+        static readonly Driver PoliceDriver = new Driver { a = 2.8f, b = 3.5f, T = 1.0f, s0 = 1.6f, aLat = 4.0f };
+        static readonly Driver TruckDriver = new Driver { a = 1.3f, b = 2.6f, T = 1.6f, s0 = 2.8f, aLat = 2.2f };
         static readonly Driver BusDriver = new Driver { a = 1.1f, b = 2.5f, T = 1.5f, s0 = 2.5f, aLat = 2.0f };
+
+        static Driver DriverForBatch(int batch)
+        {
+            switch (batch)
+            {
+                case 0: return TaxiDriver;
+                case 3: return BusDriver;
+                case 4: return PoliceDriver;
+                case 5: return TruckDriver;
+                default: return CarDriver;
+            }
+        }
 
         Agent[] _agents = System.Array.Empty<Agent>();
         readonly Dictionary<int, int> _laneHead = new Dictionary<int, int>(512);
         int[] _nextInLane = System.Array.Empty<int>();
         readonly List<VehicleInstance>[] _batches =
         {
-            new List<VehicleInstance>(128), new List<VehicleInstance>(128),
-            new List<VehicleInstance>(128), new List<VehicleInstance>(64)
+            new List<VehicleInstance>(128), // 0: Taxi
+            new List<VehicleInstance>(128), // 1: Sedan
+            new List<VehicleInstance>(128), // 2: SUV
+            new List<VehicleInstance>(64),  // 3: Bus
+            new List<VehicleInstance>(64),  // 4: Police
+            new List<VehicleInstance>(64)   // 5: Truck
         };
 
         float _time;
@@ -106,13 +126,65 @@ namespace Nyc.Gameplay.Traffic
             for (int i = 0; i < total; i++)
             {
                 bool bus = i >= cars;
+                int batch = 1;
+                float halfLen = 2.25f;
+                float halfWidth = 0.92f;
+                float v0 = 13.4f;
+
+                if (bus)
+                {
+                    batch = 3;
+                    halfLen = 5.8f;
+                    halfWidth = 1.28f;
+                    v0 = 11.0f;
+                }
+                else
+                {
+                    int roll = _rng.Next(0, 100);
+                    if (roll < 35) // 35% Yellow Taxis
+                    {
+                        batch = 0;
+                        halfLen = 2.25f;
+                        halfWidth = 0.92f;
+                        v0 = 14.5f;
+                    }
+                    else if (roll < 65) // 30% Sedans
+                    {
+                        batch = 1;
+                        halfLen = 2.25f;
+                        halfWidth = 0.92f;
+                        v0 = 13.4f;
+                    }
+                    else if (roll < 82) // 17% SUVs
+                    {
+                        batch = 2;
+                        halfLen = 2.45f;
+                        halfWidth = 0.98f;
+                        v0 = 13.0f;
+                    }
+                    else if (roll < 92) // 10% Delivery Box Trucks
+                    {
+                        batch = 5;
+                        halfLen = 3.65f;
+                        halfWidth = 1.15f;
+                        v0 = 11.5f;
+                    }
+                    else // 8% NYPD Patrol Cars
+                    {
+                        batch = 4;
+                        halfLen = 2.28f;
+                        halfWidth = 0.93f;
+                        v0 = 15.5f;
+                    }
+                }
+
                 _agents[i] = new Agent
                 {
                     Bus = bus,
-                    Batch = bus ? 3 : (_rng.Next(0, 100) < 55 ? 0 : _rng.Next(0, 100) < 60 ? 1 : 2),
-                    HalfLen = bus ? 5.8f : 2.25f,
-                    HalfWidth = bus ? 1.28f : 0.92f,
-                    V0 = bus ? 11.0f : 13.4f,
+                    Batch = batch,
+                    HalfLen = halfLen,
+                    HalfWidth = halfWidth,
+                    V0 = v0,
                     NextLane = -1,
                     Active = false
                 };
@@ -160,7 +232,7 @@ namespace Nyc.Gameplay.Traffic
         void Step(ref Agent v, int index, float dt, Vector2 focus)
         {
             RoadNetwork.Lane lane = network.Lanes[v.Lane];
-            Driver d = v.Bus ? BusDriver : CarDriver;
+            Driver d = DriverForBatch(v.Batch);
 
             float freeAcc = d.a * (1f - Mathf.Pow(v.Speed / Mathf.Max(0.1f, v.V0), 4f));
             float worst = 0f;
@@ -200,19 +272,23 @@ namespace Nyc.Gameplay.Traffic
                     worst = Mathf.Min(worst, StopAt(v, distanceToEnd - 0.5f, 1f, d));
             }
 
-            // The player counts as a leader.
-            if (controllers && controllers.Active != null)
+            // The player counts as a leader (excluding helicopters and mismatched vertical levels e.g. viaducts)
+            if (controllers && controllers.Active != null && controllers.ActiveMode != TravelMode.Helicopter)
             {
-                Vector2 player = controllers.Active.Position;
-                if (Vector2.Distance(player, v.Position) < 60f)
+                float playerH = controllers.Active.Height;
+                if (Mathf.Abs(playerH - v.Y) < 2.2f)
                 {
-                    float ps = network.Project(v.Lane, player);
-                    float ds = ps - v.S;
-                    if (ds > 0f && ds < lookAhead)
+                    Vector2 player = controllers.Active.Position;
+                    if (Vector2.Distance(player, v.Position) < 60f)
                     {
-                        network.Sample(v.Lane, ps, out Vector2 lanePoint, out _);
-                        if (Vector2.Distance(lanePoint, player) < 2.4f + v.HalfWidth)
-                            worst = Mathf.Min(worst, Brake(v, ds - v.HalfLen - 0.6f, 0f, d));
+                        float ps = network.Project(v.Lane, player);
+                        float ds = ps - v.S;
+                        if (ds > 0f && ds < lookAhead)
+                        {
+                            network.Sample(v.Lane, ps, out Vector2 lanePoint, out _);
+                            if (Vector2.Distance(lanePoint, player) < 2.4f + v.HalfWidth)
+                                worst = Mathf.Min(worst, Brake(v, ds - v.HalfLen - 0.6f, 0f, d));
+                        }
                     }
                 }
             }
@@ -433,7 +509,7 @@ namespace Nyc.Gameplay.Traffic
                 int batch = Mathf.Clamp(a.Batch, 0, _batches.Length - 1);
                 _batches[batch].Add(new VehicleInstance
                 {
-                    Position = CityFrame.ToUnity(a.Position.x, 0f, a.Position.y),
+                    Position = CityFrame.ToUnity(a.Position.x, a.Y, a.Position.y),
                     Rotation = CityFrame.HeadingToRotation(a.Heading),
                     Scale = 1f
                 });

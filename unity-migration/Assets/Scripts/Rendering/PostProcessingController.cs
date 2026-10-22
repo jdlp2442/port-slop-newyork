@@ -157,9 +157,9 @@ namespace Nyc.Rendering
                     _vignette = profile.Add<Vignette>(true);
             }
 
+            _initialized = true;
             currentLook = PostProcessingLook.Golden;
             ApplyLook(currentLook);
-            _initialized = true;
         }
 
         void OnLightingPresetChanged(TimeOfDayPreset preset)

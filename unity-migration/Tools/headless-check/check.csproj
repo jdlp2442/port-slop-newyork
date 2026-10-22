@@ -56,10 +56,14 @@
     <Compile Include="../../Assets/Scripts/Rendering/StreetDetailsSystem.cs" />
     <Compile Include="../../Assets/Scripts/Rendering/SceneCullingSystem.cs" />
     <Compile Include="../../Assets/Scripts/Rendering/PostProcessingController.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/Passes/AtmosphericScatteringFeature.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/Passes/NycGroundContactFeature.cs" />
+    <Compile Include="../../Assets/Scripts/Rendering/Passes/NycBloomFeature.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/ActorModelFactory.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/VehicleLightsRenderer.cs" />
     <Compile Include="../../Assets/Editor/ManhattanBakeMenu.cs" />
     <Compile Include="../../Assets/Editor/NycPresetCreator.cs" />
     <Compile Include="../../Assets/Editor/NycGeoDataImporter.cs" />
+    <Compile Include="../../Assets/Editor/NycVolumeProfileCreator.cs" />
   </ItemGroup>
 </Project>

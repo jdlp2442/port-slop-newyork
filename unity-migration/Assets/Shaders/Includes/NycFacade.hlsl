@@ -100,7 +100,7 @@ NycFacadeCell NycBuildFacadeCell(
 
     float3 an = abs(normalWS);
     c.isRoof = step(0.75, an.y);
-    float alongZ = step(an.z, an.x);            // wall faces +/-X -> u runs along Z
+    float alongZ = step(an.z - 0.0001, an.x);   // camera-independent tie-break on 45-deg faces
 
     c.kind  = uv2.x;
     c.tone  = uv2.y;
@@ -195,7 +195,10 @@ float4 NycApartmentInterior(
     float originY = (winUV.y - 0.46) * roomH * 0.62;
 
     // Horizontal tangent of this wall, and the view ray expressed in (across, up, depth).
-    float3 tangent = normalize(cross(float3(0.0, 1.0, 0.0), normalWS) + float3(1e-5, 0.0, 0.0));
+    // Exact camera-independent formula verified in tests/facade-projection.test.cjs
+    float alongZ = step(abs(normalWS.z) - 0.0001, abs(normalWS.x));
+    float tSign = lerp(-sign(normalWS.z), sign(normalWS.x), alongZ);
+    float3 tangent = float3(-normalWS.z, 0.0, normalWS.x) * tSign;
     float3 rayWorld = normalize(positionWS - cameraPos);
     float dirX = dot(rayWorld, tangent);
     float dirY = rayWorld.y;

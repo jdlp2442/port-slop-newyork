@@ -438,22 +438,82 @@ namespace Nyc.Generation
             int cap = Mathf.Max(floors + 4, Mathf.FloorToInt(Mathf.Min(lot.Width, lot.Depth) * 9f / p.Storey));
             towerFloors = Mathf.Min(towerFloors, cap);
 
-            float h = towerFloors * p.Storey;
+            float totalH = towerFloors * p.Storey;
             float tone = rng.Range(0.15f, 0.9f);
             bool shops = street[0] || street[1];
             Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), 0, 255);
 
-            float podium = h * rng.Range(0.35f, 0.55f);
-            EmitBox(frame, lot, 0f, podium, street, shops, tone, p.Style, col, true);
-            EmitCornice(frame, lot, podium, tone);
-
-            float inset = rng.Range(1.6f, 3.4f);
-            RectXZ shaft = lot.Inset(inset);
-            if (shaft.Width > 8f && shaft.Depth > 8f)
+            // Choose tower typology: 1916 Zoning Deco Wedding Cake, International Style Slab, or Slender Supertall
+            float roll = rng.NextFloat();
+            if (p.Style <= 2 || roll < 0.45f)
             {
-                EmitBox(frame, shaft, podium, h, street, false, tone, p.Style, col, true);
-                EmitCornice(frame, shaft, h, tone);
-                if (buildProps) EmitRoofProps(frame, shaft, h, tone);
+                // 1916-zoning "wedding cake": 3 or 4 setback tiers with cornices on every ledge
+                var tiers = new List<RectXZ> { lot };
+                while (tiers.Count < 4)
+                {
+                    RectXZ prev = tiers[tiers.Count - 1];
+                    float insetDist = rng.Range(2.0f, 3.4f);
+                    RectXZ next = prev.Inset(insetDist);
+                    if (next.Width < Mathf.Max(10f, lot.Width * 0.45f) || next.Depth < Mathf.Max(9f, lot.Depth * 0.45f))
+                        break;
+                    tiers.Add(next);
+                }
+
+                float curY = 0f;
+                for (int i = 0; i < tiers.Count; i++)
+                {
+                    bool isLast = i == tiers.Count - 1;
+                    float remainingH = totalH - curY;
+                    float tierH = isLast ? remainingH : Mathf.Max(2f * p.Storey, remainingH * (i == 0 ? rng.Range(0.35f, 0.50f) : rng.Range(0.30f, 0.45f)));
+
+                    RectXZ tRect = tiers[i];
+                    EmitBox(frame, tRect, curY, curY + tierH, street, (i == 0) && shops, tone, p.Style, col, true);
+                    EmitCornice(frame, tRect, curY + tierH, tone);
+
+                    if (isLast && buildProps)
+                    {
+                        EmitRoofProps(frame, tRect, curY + tierH, tone);
+                    }
+                    curY += tierH;
+                }
+            }
+            else if (p.Style == 5 && lot.Width >= 22f && lot.Depth >= 22f)
+            {
+                // Billionaires' Row: Slender supertall on podium with mechanical crown
+                float podiumH = rng.Range(3, 6) * p.Storey;
+                EmitBox(frame, lot, 0f, podiumH, street, shops, tone, p.Style, col, true);
+                EmitCornice(frame, lot, podiumH, tone);
+
+                RectXZ shaft = lot.Inset(rng.Range(2.2f, 3.8f));
+                float crownH = rng.Range(4, 7) * p.Storey;
+                float shaftH = totalH - podiumH - crownH;
+
+                EmitBox(frame, shaft, podiumH, podiumH + shaftH, street, false, tone, p.Style, col, true);
+                EmitCornice(frame, shaft, podiumH + shaftH, tone);
+
+                RectXZ crown = shaft.Inset(rng.Range(1.8f, 2.6f));
+                if (crown.Width > 8f && crown.Depth > 8f)
+                {
+                    EmitBox(frame, crown, podiumH + shaftH, totalH, street, false, tone, p.Style, col, true);
+                    EmitCornice(frame, crown, totalH, tone);
+                    if (buildProps) EmitRoofProps(frame, crown, totalH, tone);
+                }
+            }
+            else
+            {
+                // Modern Glass Slab Tower with Plaza / Podium
+                float podium = totalH * rng.Range(0.28f, 0.42f);
+                EmitBox(frame, lot, 0f, podium, street, shops, tone, p.Style, col, true);
+                EmitCornice(frame, lot, podium, tone);
+
+                float inset = rng.Range(2.2f, 4.2f);
+                RectXZ shaft = lot.Inset(inset);
+                if (shaft.Width > 8f && shaft.Depth > 8f)
+                {
+                    EmitBox(frame, shaft, podium, totalH, street, false, tone, p.Style, col, true);
+                    EmitCornice(frame, shaft, totalH, tone);
+                    if (buildProps) EmitRoofProps(frame, shaft, totalH, tone);
+                }
             }
 
             buildingCount++;

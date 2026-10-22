@@ -734,31 +734,109 @@ namespace Nyc.Generation
             float totalLen = Vector2.Distance(start, end);
 
             // Two main suspension towers at 1/3 and 2/3 of span
-            Vector2 t1 = start + dir * (totalLen * 0.33f);
-            Vector2 t2 = start + dir * (totalLen * 0.67f);
+            float t1Dist = totalLen * 0.33f;
+            float t2Dist = totalLen * 0.67f;
+            Vector2 t1 = start + dir * t1Dist;
+            Vector2 t2 = start + dir * t2Dist;
 
-            // Tower Pillars & Arches
+            float deckH = 40f;
+
+            // 1. Massive Shore Anchorages
+            AddBoxSimple(towerV, towerN, towerU, towerT, start.x, start.y, 16f, deckW + 12f, 36f, 32f);
+            AddBoxSimple(towerV, towerN, towerU, towerT, end.x, end.y, 16f, deckW + 12f, 36f, 32f);
+
+            // 2. Tower Pillars & Gothic / Steel Lattice Portals
             foreach (var tp in new[] { t1, t2 })
             {
                 float legOffset = deckW * 0.45f;
                 Vector2 l1 = tp + nrm * legOffset;
                 Vector2 l2 = tp - nrm * legOffset;
 
-                AddBoxSimple(towerV, towerN, towerU, towerT, l1.x, l1.y, towerH * 0.5f, 6f, 8f, towerH);
-                AddBoxSimple(towerV, towerN, towerU, towerT, l2.x, l2.y, towerH * 0.5f, 6f, 8f, towerH);
-                // Top cross strut
-                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, towerH - 3f, deckW + 6f, 6f, 6f);
+                // Foundation Caissons below water
+                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, 2f, deckW + 16f, 22f, 10f);
+
+                // Two soaring vertical legs / columns
+                AddBoxSimple(towerV, towerN, towerU, towerT, l1.x, l1.y, towerH * 0.5f, 6.5f, 9.5f, towerH);
+                AddBoxSimple(towerV, towerN, towerU, towerT, l2.x, l2.y, towerH * 0.5f, 6.5f, 9.5f, towerH);
+
+                // Lower roadway cross-girder & portals
+                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, deckH - 2f, deckW + 4f, 8f, 4.5f);
+                // Intermediate portal strut
+                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, Mathf.Lerp(deckH, towerH, 0.55f), deckW + 4f, 7f, 4f);
+                // Top cross saddle girder
+                AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, towerH - 2f, deckW + 8f, 10f, 5f);
+
+                if (stoneTowers)
+                {
+                    // Brooklyn Bridge central Gothic divider pier creating twin pointed archways
+                    AddBoxSimple(towerV, towerN, towerU, towerT, tp.x, tp.y, (deckH + towerH) * 0.5f, 4.5f, 8.5f, towerH - deckH);
+                }
             }
 
-            // Roadway deck
-            float deckH = 40f;
-            float segLen = 25f;
+            // 3. Roadway Deck & Stiffening Trusses
+            float segLen = 20f;
             int numSegs = Mathf.CeilToInt(totalLen / segLen);
             for (int i = 0; i < numSegs; i++)
             {
-                float tFrac = (i + 0.5f) / numSegs;
-                Vector2 p = start + dir * (totalLen * tFrac);
-                AddBoxSimple(deckV, deckN, deckU, deckT, p.x, p.y, deckH, deckW, segLen, 3f);
+                float tDist = (i + 0.5f) * segLen;
+                float tFrac = tDist / totalLen;
+                Vector2 p = start + dir * tDist;
+
+                // Roadway floor slab
+                AddBoxSimple(deckV, deckN, deckU, deckT, p.x, p.y, deckH, deckW, segLen, 2.5f);
+
+                // Left and right stiffening Warren trusses
+                Vector2 sL = p + nrm * (deckW * 0.5f - 0.4f);
+                Vector2 sR = p - nrm * (deckW * 0.5f - 0.4f);
+                AddBoxSimple(deckV, deckN, deckU, deckT, sL.x, sL.y, deckH + 2.5f, 0.8f, segLen, 5f);
+                AddBoxSimple(deckV, deckN, deckU, deckT, sR.x, sR.y, deckH + 2.5f, 0.8f, segLen, 5f);
+            }
+
+            // 4. Parabolic Catenary Suspension Cables & Vertical Suspenders
+            int cableSegs = Mathf.CeilToInt(totalLen / 12f);
+            float saddleY = towerH - 2f;
+            float cableR = 0.65f;
+
+            for (int i = 0; i <= cableSegs; i++)
+            {
+                float dist = (i / (float)cableSegs) * totalLen;
+                float cableY;
+
+                if (dist < t1Dist)
+                {
+                    // Side span from start anchorage (y=18) up to tower 1
+                    float u = dist / t1Dist;
+                    cableY = Mathf.Lerp(18f, saddleY, Mathf.Pow(u, 1.4f));
+                }
+                else if (dist > t2Dist)
+                {
+                    // Side span from tower 2 down to end anchorage (y=18)
+                    float u = (dist - t2Dist) / (totalLen - t2Dist);
+                    cableY = Mathf.Lerp(saddleY, 18f, Mathf.Pow(u, 0.7f));
+                }
+                else
+                {
+                    // Main central span catenary dip
+                    float u = (dist - t1Dist) / (t2Dist - t1Dist);
+                    float dip = 4f * u * (1f - u); // 0 at towers, 1 at center
+                    cableY = saddleY - dip * (saddleY - (deckH + 2.8f));
+                }
+
+                Vector2 centerPt = start + dir * dist;
+
+                // 2 pairs of cables (outer left and outer right)
+                foreach (float sideSgn in new[] { -1f, 1f })
+                {
+                    Vector2 cPos = centerPt + nrm * (sideSgn * (deckW * 0.5f + 0.5f));
+                    AddBoxSimple(deckV, deckN, deckU, deckT, cPos.x, cPos.y, cableY, cableR * 2f, 12.5f, cableR * 2f);
+
+                    // Vertical suspender wire down to deck level
+                    if (cableY > deckH + 3f && dist > 20f && dist < totalLen - 20f)
+                    {
+                        float dropH = cableY - deckH;
+                        AddBoxSimple(deckV, deckN, deckU, deckT, cPos.x, cPos.y, deckH + dropH * 0.5f, 0.22f, 0.22f, dropH);
+                    }
+                }
             }
         }
 
@@ -767,28 +845,92 @@ namespace Nyc.Generation
                                           Vector2 start, Vector2 end, Vector2 midRoosevelt)
         {
             Vector2 dir = (end - start).normalized;
+            Vector2 nrm = new Vector2(-dir.y, dir.x);
             float totalLen = Vector2.Distance(start, end);
 
-            // Queensboro bridge has 4 massive towers (Manhattan, 2 on Roosevelt Island, Queens)
-            Vector2 p1 = start + dir * 80f;
-            Vector2 p2 = midRoosevelt - dir * 60f;
-            Vector2 p3 = midRoosevelt + dir * 60f;
-            Vector2 p4 = end - dir * 80f;
+            // Queensboro Bridge has 4 massive granite masonry piers and cantilever spires:
+            // 1. Manhattan shore (York Ave)
+            // 2. Roosevelt Island West shore
+            // 3. Roosevelt Island East shore
+            // 4. Queens shore (Long Island City)
+            Vector2 p1 = start + dir * (totalLen * 0.16f);
+            Vector2 p2 = midRoosevelt - dir * 75f;
+            Vector2 p3 = midRoosevelt + dir * 75f;
+            Vector2 p4 = end - dir * (totalLen * 0.16f);
 
-            foreach (var p in new[] { p1, p2, p3, p4 })
+            var piers = new[] { p1, p2, p3, p4 };
+            foreach (var p in piers)
             {
-                AddBoxSimple(stoneV, stoneN, stoneU, stoneT, p.x, p.y, 15f, 22f, 16f, 30f);
-                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 65f, 18f, 14f, 75f);
+                // Massive rusticated granite anchor pier
+                AddBoxSimple(stoneV, stoneN, stoneU, stoneT, p.x, p.y, 16f, 32f, 18f, 32f);
+
+                // Twin vertical cantilever steel truss towers rising to 95m
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    Vector2 col = p + nrm * (s * 13f);
+                    AddBoxSimple(steelV, steelN, steelU, steelT, col.x, col.y, 62f, 4.8f, 5.2f, 68f);
+                    // Ornate Gothic spire finial atop tower posts
+                    AddBoxSimple(steelV, steelN, steelU, steelT, col.x, col.y, 98f, 2.2f, 2.2f, 8f);
+                }
+                // Tower cross-bracing and portal arch
+                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 88f, 28f, 4.5f, 4f);
             }
 
-            // Continuous truss deck
-            float segLen = 30f;
+            // Continuous two-level cantilever deck
+            float segLen = 25f;
             int numSegs = Mathf.CeilToInt(totalLen / segLen);
             for (int i = 0; i < numSegs; i++)
             {
                 float tFrac = (i + 0.5f) / numSegs;
                 Vector2 p = start + dir * (totalLen * tFrac);
-                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 42f, 28f, segLen, 12f);
+
+                // Lower road deck
+                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 40f, 28f, segLen, 3f);
+                // Upper deck
+                AddBoxSimple(steelV, steelN, steelU, steelT, p.x, p.y, 48f, 24f, segLen, 2.5f);
+                // Side Warren trusses
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    Vector2 tw = p + nrm * (s * 13.5f);
+                    AddBoxSimple(steelV, steelN, steelU, steelT, tw.x, tw.y, 44f, 0.9f, segLen, 9f);
+                }
+            }
+
+            // Roosevelt Island Tramway (running parallel to Queensboro Bridge on its north flank)
+            Vector2 tramStart = start + nrm * 26f;
+            Vector2 tramEnd = midRoosevelt + nrm * 26f;
+            Vector2 tramDir = (tramEnd - tramStart).normalized;
+            float tramLen = Vector2.Distance(tramStart, tramEnd);
+
+            // Manhattan station & Roosevelt Island station
+            AddBoxSimple(steelV, steelN, steelU, steelT, tramStart.x, tramStart.y, 14f, 14f, 22f, 24f);
+            AddBoxSimple(steelV, steelN, steelU, steelT, tramEnd.x, tramEnd.y, 12f, 14f, 22f, 20f);
+
+            // Steel lattice tram towers
+            Vector2 tramT1 = tramStart + tramDir * (tramLen * 0.25f);
+            Vector2 tramT2 = tramStart + tramDir * (tramLen * 0.70f);
+            foreach (var tt in new[] { tramT1, tramT2 })
+            {
+                AddBoxSimple(steelV, steelN, steelU, steelT, tt.x, tt.y, 45f, 4.5f, 4.5f, 85f);
+                AddBoxSimple(steelV, steelN, steelU, steelT, tt.x, tt.y, 86f, 14f, 3.5f, 3.5f);
+            }
+
+            // Track ropes
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Vector2 rPos = (tramStart + tramEnd) * 0.5f + nrm * (s * 3.5f);
+                AddBoxSimple(steelV, steelN, steelU, steelT, rPos.x, rPos.y, 72f, 0.25f, tramLen, 0.25f);
+            }
+
+            // Two iconic bright red tram cabins shuttling across
+            Vector2 cabin1Pos = tramStart + tramDir * (tramLen * 0.38f) + nrm * 3.5f;
+            Vector2 cabin2Pos = tramStart + tramDir * (tramLen * 0.65f) - nrm * 3.5f;
+            foreach (var cp in new[] { cabin1Pos, cabin2Pos })
+            {
+                // Red cabin body (6.5m long, 3.2m wide, 3.8m high)
+                AddBoxSimple(steelV, steelN, steelU, steelT, cp.x, cp.y, 66f, 3.2f, 6.5f, 3.8f);
+                // Suspension hanger arm connecting to track rope
+                AddBoxSimple(steelV, steelN, steelU, steelT, cp.x, cp.y, 70f, 0.35f, 0.35f, 4.5f);
             }
         }
 

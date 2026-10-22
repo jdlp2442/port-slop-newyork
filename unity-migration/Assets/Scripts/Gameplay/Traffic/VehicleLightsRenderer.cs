@@ -222,12 +222,12 @@ namespace Nyc.Gameplay.Traffic
             beamMaterial.SetFloat("_NightIntensity", nightIntensity);
             tailMaterial.SetFloat("_NightIntensity", nightIntensity);
 
-            for (int b = 0; b < batches.Length && b < 4; b++)
+            for (int b = 0; b < batches.Length; b++)
             {
                 int count = Mathf.Min(batches[b].Count, MaxBatch);
                 if (count == 0) continue;
 
-                Mesh beamMesh = (b == 3) ? _busBeamMesh : _carBeamMesh;
+                Mesh beamMesh = (b == 3 || b == 5) ? _busBeamMesh : _carBeamMesh;
 
                 for (int i = 0; i < count; i++)
                 {

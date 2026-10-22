@@ -28,6 +28,13 @@ namespace Nyc.Generation
         public bool buildFlatiron = true;
         public bool buildSeagram = true;
         public bool buildOneWtc = true;
+        public bool buildPark432 = true;
+        public bool buildVessel = true;
+        public bool buildOculus = true;
+        public bool buildWoolworth = true;
+        public bool buildHudsonYards30 = true;
+        public bool buildUnSecretariat = true;
+        public bool buildStatueOfLiberty = true;
 
         [Header("Materials")]
         public Material limestoneTrimMaterial;
@@ -69,6 +76,13 @@ namespace Nyc.Generation
             if (buildFlatiron) BuildFlatiron(geo, LandmarkRoot);
             if (buildSeagram) BuildSeagram(geo, LandmarkRoot);
             if (buildOneWtc) BuildOneWtc(geo, LandmarkRoot);
+            if (buildPark432) BuildPark432(geo, LandmarkRoot);
+            if (buildVessel) BuildVessel(geo, LandmarkRoot);
+            if (buildOculus) BuildOculus(geo, LandmarkRoot);
+            if (buildWoolworth) BuildWoolworth(geo, LandmarkRoot);
+            if (buildHudsonYards30) BuildHudsonYards30(geo, LandmarkRoot);
+            if (buildUnSecretariat) BuildUnSecretariat(geo, LandmarkRoot);
+            if (buildStatueOfLiberty) BuildStatueOfLiberty(geo, LandmarkRoot);
 
             return rootGo;
         }
@@ -582,6 +596,367 @@ namespace Nyc.Generation
             AddCollider(c0, bMin, bMax);
 
             FitToSite(ctx, geo, "One World Trade Center", c0, 541f, horizontal: 1.27f);
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 12. 432 PARK AVENUE (Billionaires' Row Supertall Pencil Tower)
+        // =========================================================================
+        void BuildPark432(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("Park432", root);
+
+            int matConcrete = ctx.RegisterMaterial(marbleStoneMaterial);
+            int matGlass = ctx.RegisterMaterial(darkBronzeFrameMaterial);
+            int matSteel = ctx.RegisterMaterial(stainlessSteelMaterial);
+            int matBeacon = ctx.RegisterMaterial(beaconMaterial);
+
+            // Ground floor retail podium & entry
+            ctx.AddBox(new Vector3(0, 7.5f, 0), new Vector3(29f, 15f, 29f), matConcrete);
+            ctx.AddBox(new Vector3(0, 4.5f, 14.6f), new Vector3(12f, 9f, 0.6f), matGlass);
+
+            // 6 stacked residential modules separated by 2-story open wind drums
+            float yCur = 15f;
+            const int modules = 6;
+            const float modH = 58f;
+            const float drumH = 9f;
+            const float towerW = 28f;
+
+            for (int m = 0; m < modules; m++)
+            {
+                // Core / facade shaft
+                ctx.AddBox(new Vector3(0, yCur + modH * 0.5f, 0), new Vector3(towerW, modH, towerW), matConcrete);
+                // Dark recessed window bays
+                ctx.AddBox(new Vector3(0, yCur + modH * 0.5f, 0), new Vector3(towerW + 0.15f, modH - 1.5f, towerW * 0.88f), matGlass);
+                ctx.AddBox(new Vector3(0, yCur + modH * 0.5f, 0), new Vector3(towerW * 0.88f, modH - 1.5f, towerW + 0.15f), matGlass);
+                yCur += modH;
+
+                if (m < modules - 1)
+                {
+                    // Open-air cylindrical wind pass-through drum
+                    ctx.AddCylinder(new Vector3(0, yCur, 0), 7.5f, 7.5f, drumH, 16, matSteel);
+                    // 4 structural perimeter corner columns
+                    for (int sx = -1; sx <= 1; sx += 2)
+                    {
+                        for (int sz = -1; sz <= 1; sz += 2)
+                        {
+                            ctx.AddBox(new Vector3(sx * 12f, yCur + drumH * 0.5f, sz * 12f),
+                                       new Vector3(3.2f, drumH, 3.2f), matConcrete);
+                        }
+                    }
+                    yCur += drumH;
+                }
+            }
+
+            // Top crown parapet & elevator penthouse
+            ctx.AddBox(new Vector3(0, yCur + 5f, 0), new Vector3(towerW + 0.4f, 10f, towerW + 0.4f), matConcrete);
+            ctx.AddCylinder(new Vector3(0, yCur + 10f, 0), 0.25f, 0.8f, 16f, 8, matSteel);
+            ctx.AddSphere(new Vector3(0, yCur + 26f, 0), 1.1f, 8, 8, matBeacon);
+
+            Vector3 bMin = new Vector3(-14.5f, 0, -14.5f);
+            Vector3 bMax = new Vector3(14.5f, 426f, 14.5f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "432 Park Avenue", c0, 426f);
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 13. THE VESSEL (Hudson Yards Honeycomb Spiral Structure)
+        // =========================================================================
+        void BuildVessel(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("TheVessel", root);
+
+            int matCopper = ctx.RegisterMaterial(copperRoofMaterial);
+            int matBronze = ctx.RegisterMaterial(darkBronzeFrameMaterial);
+            int matSteel = ctx.RegisterMaterial(stainlessSteelMaterial);
+
+            // Inverted truncated cone composed of 16 interconnected tiers
+            const int tiers = 16;
+            const float totalH = 46f;
+            const float rBase = 7.5f;
+            const float rTop = 22.5f;
+            const int sides = 16;
+
+            for (int t = 0; t < tiers; t++)
+            {
+                float u0 = t / (float)tiers;
+                float u1 = (t + 1) / (float)tiers;
+                float y0 = u0 * totalH;
+                float y1 = u1 * totalH;
+                float r0 = Mathf.Lerp(rBase, rTop, u0);
+                float r1 = Mathf.Lerp(rBase, rTop, u1);
+
+                // Outer polygonal platform ring
+                for (int s = 0; s < sides; s++)
+                {
+                    float a0 = (s / (float)sides) * Mathf.PI * 2f;
+                    float a1 = ((s + 1) / (float)sides) * Mathf.PI * 2f;
+
+                    Vector3 p0 = new Vector3(Mathf.Cos(a0) * r0, y0, Mathf.Sin(a0) * r0);
+                    Vector3 p1 = new Vector3(Mathf.Cos(a1) * r0, y0, Mathf.Sin(a1) * r0);
+                    Vector3 p2 = new Vector3(Mathf.Cos(a1) * r1, y1, Mathf.Sin(a1) * r1);
+                    Vector3 p3 = new Vector3(Mathf.Cos(a0) * r1, y1, Mathf.Sin(a0) * r1);
+
+                    Vector3 mid = (p0 + p1 + p2 + p3) * 0.25f;
+                    Vector3 sz = new Vector3(Vector3.Distance(p0, p1), 1.2f, 2.2f);
+                    ctx.AddBox(mid, sz, matCopper);
+
+                    // Cross stairs
+                    if ((s + t) % 2 == 0)
+                    {
+                        Vector3 stairMid = (p0 + p2) * 0.5f;
+                        ctx.AddBox(stairMid, new Vector3(1.4f, y1 - y0, 1.4f), matBronze);
+                    }
+                }
+            }
+
+            // Central base plaza pedestal
+            ctx.AddCylinder(new Vector3(0, 0, 0), rBase, rBase * 1.1f, 1.2f, 16, matSteel);
+
+            Vector3 bMin = new Vector3(-24f, 0, -24f);
+            Vector3 bMax = new Vector3(24f, 46f, 24f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "The Shed", c0, 46f, offset: new Vector2(40f, -30f));
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 14. THE OCULUS (WTC Transportation Hub)
+        // =========================================================================
+        void BuildOculus(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("TheOculus", root);
+
+            int matRibs = ctx.RegisterMaterial(stainlessSteelMaterial);
+            int matGlass = ctx.RegisterMaterial(warmFloodMaterial);
+            int matFloor = ctx.RegisterMaterial(marbleStoneMaterial);
+
+            // Elliptical floor slab
+            ctx.AddCylinder(new Vector3(0, 0, 0), 16f, 16f, 2.5f, 24, matFloor);
+
+            // Central glazed elliptical mezzanine
+            ctx.AddBox(new Vector3(0, 6f, 0), new Vector3(24f, 8f, 70f), matGlass);
+
+            // Longitudinal skylight spine ("Wedge of Light")
+            ctx.AddBox(new Vector3(0, 14f, 0), new Vector3(3.2f, 2.8f, 78f), matRibs);
+
+            // 40 Cantilevered steel structural rib pairs arching up into wings
+            const int numRibs = 22;
+            for (int r = 0; r < numRibs; r++)
+            {
+                float z = Mathf.Lerp(-34f, 34f, r / (float)(numRibs - 1));
+                float spanFrac = 1.0f - Mathf.Pow(Mathf.Abs(z) / 36f, 2f);
+                float wingH = Mathf.Lerp(16f, 42f, spanFrac);
+                float wingSpread = Mathf.Lerp(14f, 32f, spanFrac);
+
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    Vector3 basePt = new Vector3(s * 8f, 5f, z);
+                    Vector3 tipPt = new Vector3(s * wingSpread, wingH, z);
+                    Vector3 midPt = (basePt + tipPt) * 0.5f;
+
+                    ctx.AddBox(midPt, new Vector3(0.55f, wingH - 5f, 0.65f), matRibs);
+                }
+            }
+
+            Vector3 bMin = new Vector3(-35f, 0, -40f);
+            Vector3 bMax = new Vector3(35f, 48f, 40f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "One World Trade Center", c0, 48f, offset: new Vector2(75f, 10f));
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 15. WOOLWORTH BUILDING (Broadway & Park Row)
+        // =========================================================================
+        void BuildWoolworth(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("WoolworthBuilding", root);
+
+            int matTerracotta = ctx.RegisterMaterial(limestoneTrimMaterial);
+            int matCopper = ctx.RegisterMaterial(copperRoofMaterial);
+            int matGlass = ctx.RegisterMaterial(darkBronzeFrameMaterial);
+            int matBeacon = ctx.RegisterMaterial(beaconMaterial);
+
+            // 30-story Base (54m x 54m x 108m high)
+            ctx.AddBox(new Vector3(0, 54f, 0), new Vector3(54f, 108f, 54f), matTerracotta);
+            // U-shaped central light court facing east
+            ctx.AddBox(new Vector3(0, 58f, 18f), new Vector3(18f, 100f, 20f), matGlass);
+
+            // 30-story Setback Tower (26m x 26m x 98m high) rising to 206m
+            ctx.AddBox(new Vector3(0, 157f, -4f), new Vector3(26f, 98f, 26f), matTerracotta);
+
+            // 4 Corner Gothic Tourelles (octagonal turrets) at the setback
+            for (int sx = -1; sx <= 1; sx += 2)
+            {
+                for (int sz = -1; sz <= 1; sz += 2)
+                {
+                    Vector3 p = new Vector3(sx * 13f, 108f, -4f + sz * 13f);
+                    ctx.AddCylinder(p, 1.6f, 1.6f, 18f, 8, matTerracotta);
+                    ctx.AddCone(p + new Vector3(0, 18f, 0), 1.8f, 7f, 8, matCopper);
+                }
+            }
+
+            // Pyramidal Green Copper Roof
+            ctx.AddCone(new Vector3(0, 206f, -4f), 15f, 22f, 4, matCopper);
+
+            // Gothic Spire & Lantern
+            ctx.AddCylinder(new Vector3(0, 228f, -4f), 0.25f, 1.5f, 13f, 8, matCopper);
+            ctx.AddSphere(new Vector3(0, 241f, -4f), 0.85f, 8, 8, matBeacon);
+
+            Vector3 bMin = new Vector3(-27f, 0, -27f);
+            Vector3 bMax = new Vector3(27f, 241f, 27f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "Woolworth Building", c0, 241f);
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 16. 30 HUDSON YARDS (Supertall with Cantilevered "The Edge" Deck)
+        // =========================================================================
+        void BuildHudsonYards30(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("HudsonYards30", root);
+
+            int matGlass = ctx.RegisterMaterial(silverCurtainMaterial);
+            int matSteel = ctx.RegisterMaterial(stainlessSteelMaterial);
+            int matDeck = ctx.RegisterMaterial(warmFloodMaterial);
+            int matBeacon = ctx.RegisterMaterial(beaconMaterial);
+
+            // Base Podium
+            ctx.AddBox(new Vector3(0, 24f, 0), new Vector3(56f, 48f, 48f), matGlass);
+
+            // Angled main shaft rising to 335m
+            ctx.AddBox(new Vector3(0, 190f, 0), new Vector3(46f, 284f, 40f), matGlass);
+
+            // Triangular Cantilevered Observation Deck "The Edge" at y = 335m
+            // Juts 22m out towards the east/south corner
+            Vector3 deckCenter = new Vector3(28f, 335f, 16f);
+            ctx.AddBox(deckCenter, new Vector3(22f, 2.2f, 20f), matSteel);
+            ctx.AddBox(deckCenter + new Vector3(0, 1.6f, 0), new Vector3(18f, 0.4f, 16f), matDeck);
+            // Angled glass parapet wall
+            ctx.AddBox(deckCenter + new Vector3(9f, 2.8f, 0), new Vector3(0.35f, 2.4f, 18f), matDeck);
+
+            // Sliced Angled Crown Peak rising to 387m
+            ctx.AddWedge(new Vector3(0, 335f, 0), new Vector3(44f, 52f, 38f), matGlass);
+            ctx.AddSphere(new Vector3(0, 387f, 0), 1.2f, 8, 8, matBeacon);
+
+            Vector3 bMin = new Vector3(-28f, 0, -25f);
+            Vector3 bMax = new Vector3(40f, 387f, 28f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "30 Hudson Yards", c0, 387f);
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 17. UNITED NATIONS SECRETARIAT BUILDING (East River Modernist Slab)
+        // =========================================================================
+        void BuildUnSecretariat(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("UnSecretariat", root);
+
+            int matGlass = ctx.RegisterMaterial(bronzeCurtainMaterial);
+            int matMarble = ctx.RegisterMaterial(marbleStoneMaterial);
+            int matSteel = ctx.RegisterMaterial(stainlessSteelMaterial);
+
+            // 154m tall slender modernist slab (84m north-south x 22m east-west)
+            const float slabW = 22f;
+            const float slabD = 84f;
+            const float slabH = 154f;
+
+            // East & West curtain wall glass facades
+            ctx.AddBox(new Vector3(0, slabH * 0.5f, 0), new Vector3(slabW - 1.2f, slabH, slabD), matGlass);
+
+            // North and South solid windowless Vermont white marble end walls
+            ctx.AddBox(new Vector3(0, slabH * 0.5f, -slabD * 0.5f + 0.6f), new Vector3(slabW, slabH, 1.4f), matMarble);
+            ctx.AddBox(new Vector3(0, slabH * 0.5f, slabD * 0.5f - 0.6f), new Vector3(slabW, slabH, 1.4f), matMarble);
+
+            // Recessed mechanical penthouse and communication antenna
+            ctx.AddBox(new Vector3(0, slabH + 3.2f, 0), new Vector3(14f, 6.4f, 48f), matMarble);
+            ctx.AddCylinder(new Vector3(0, slabH + 6.4f, 0), 0.15f, 0.6f, 18f, 8, matSteel);
+
+            Vector3 bMin = new Vector3(-12f, 0, -43f);
+            Vector3 bMax = new Vector3(12f, 154f, 43f);
+            AddCollider(c0, bMin, bMax);
+
+            FitToSite(ctx, geo, "United Nations Secretariat Building", c0, 154f);
+            ctx.FinalizeMesh();
+        }
+
+        // =========================================================================
+        // 18. STATUE OF LIBERTY (Fort Wood 11-Point Star & Pedestal)
+        // =========================================================================
+        void BuildStatueOfLiberty(NycGeoData geo, Transform root)
+        {
+            int c0 = CollisionBoxes.Count;
+            var ctx = new LandmarkContext("StatueOfLiberty", root);
+
+            int matFort = ctx.RegisterMaterial(marbleStoneMaterial);
+            int matPedestal = ctx.RegisterMaterial(limestoneTrimMaterial);
+            int matCopper = ctx.RegisterMaterial(copperRoofMaterial);
+            int matFlame = ctx.RegisterMaterial(warmFloodMaterial);
+
+            // 1. Fort Wood 11-pointed star fort base (height 12m, width 64m)
+            const int points = 11;
+            const float rOuter = 32f;
+            for (int p = 0; p < points; p++)
+            {
+                float a0 = (p / (float)points) * Mathf.PI * 2f;
+                float aMid = ((p + 0.5f) / (float)points) * Mathf.PI * 2f;
+                float a1 = ((p + 1) / (float)points) * Mathf.PI * 2f;
+
+                Vector3 tip = new Vector3(Mathf.Cos(aMid) * rOuter, 6f, Mathf.Sin(aMid) * rOuter);
+                ctx.AddBox(tip, new Vector3(7.5f, 12f, 7.5f), matFort);
+            }
+            ctx.AddCylinder(new Vector3(0, 0, 0), 22f, 22f, 12f, 16, matFort);
+
+            // 2. Stepped Neoclassical Granite Pedestal (47m high)
+            ctx.AddBox(new Vector3(0, 16f, 0), new Vector3(24f, 8f, 24f), matPedestal);
+            ctx.AddBox(new Vector3(0, 24f, 0), new Vector3(20f, 8f, 20f), matPedestal);
+            ctx.AddBox(new Vector3(0, 36f, 0), new Vector3(16f, 16f, 16f), matPedestal);
+            // Observation gallery balcony
+            ctx.AddBox(new Vector3(0, 45f, 0), new Vector3(18f, 2f, 18f), matPedestal);
+
+            // 3. Copper Statue of Libertas (46m high to torch)
+            // Robed body and draping folds
+            ctx.AddCylinder(new Vector3(0, 46f, 0), 3.2f, 5.2f, 26f, 12, matCopper);
+            // Head and radiant 7-point crown
+            Vector3 headPos = new Vector3(0, 74f, 0);
+            ctx.AddSphere(headPos, 2.6f, 8, 8, matCopper);
+            for (int i = 0; i < 7; i++)
+            {
+                float ca = (i - 3) * 0.22f;
+                Vector3 spikeTip = headPos + new Vector3(Mathf.Sin(ca) * 4.8f, 3.2f + Mathf.Cos(ca) * 1.5f, -1.2f);
+                ctx.AddCone(headPos + new Vector3(Mathf.Sin(ca) * 2.2f, 2.2f, -0.6f), 0.35f, 3.2f, 4, matCopper);
+            }
+
+            // Left arm cradling tabula ansata (tablet)
+            ctx.AddBox(new Vector3(-3.8f, 62f, -1.2f), new Vector3(1.2f, 3.8f, 2.6f), matCopper);
+
+            // Right arm raised high holding the torch
+            ctx.AddCylinder(new Vector3(2.8f, 66f, 0), 0.8f, 1.1f, 18f, 8, matCopper);
+            // Golden flame with floodlight glow
+            ctx.AddCone(new Vector3(2.8f, 85f, 0), 1.6f, 5.5f, 8, matFlame);
+
+            Vector3 bMin = new Vector3(-32f, 0, -32f);
+            Vector3 bMax = new Vector3(32f, 93f, 32f);
+            AddCollider(c0, bMin, bMax);
+
+            Vector2 solWorld = new Vector2(-1236.7f, 8844.1f);
+            if (geo != null && geo.Points.TryGetValue("statueOfLiberty", out var pSol)) solWorld = pSol;
+            ApplyFit(ctx, solWorld.x, solWorld.y, 64f, 64f, c0, 93f, 0f, false, Vector2.zero);
             ctx.FinalizeMesh();
         }
 

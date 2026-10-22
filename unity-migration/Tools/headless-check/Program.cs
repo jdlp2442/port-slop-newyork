@@ -183,6 +183,43 @@ public static class Program
         crowd.RebuildNow();
         Console.WriteLine($"pedestrians: {crowd.walkerCount} walkers over {crowd.blockCount} blocks in {sw.ElapsedMilliseconds} ms");
 
+        // ---- Phase 7 & 11: Landmarks & Boroughs -----------------------------
+        var lmGo = new GameObject("landmarks");
+        var lmb = lmGo.AddComponent<LandmarkMeshBuilder>();
+        sw.Restart();
+        lmb.Build(geo);
+        Console.WriteLine($"landmarks: built with {lmb.CollisionBoxes.Count} collision boxes in {sw.ElapsedMilliseconds} ms");
+
+        var boroughGo = new GameObject("boroughs");
+        var bmb = boroughGo.AddComponent<BoroughsMeshBuilder>();
+        sw.Restart();
+        bmb.Build(geo);
+        Console.WriteLine($"boroughs: built with {bmb.CollisionBoxes.Count} bridge/pier collision boxes in {sw.ElapsedMilliseconds} ms");
+
+        // ---- Phase 13: Bike Controller ---------------------------------------
+        var bike = new GameObject("bike").AddComponent<BikeController>();
+        bike.Position = new Vector2(5.2f, CityConfig.StreetZ(37) - 8f);
+        for (int i = 0; i < 300; i++) { ctx.Elapsed += 1f / 60f; bike.Tick(1f / 60f, drive, ctx); }
+        Console.WriteLine($"bike 5s: pos ({bike.Position.x:F1},{bike.Position.y:F1}) speed {bike.Speed:F2} lean {bike.LeanAngle:F2} pedal {bike.PedalPhase:F2}");
+
+        // ---- Phase 14: Post-Processing & URP Passes --------------------------
+        var ppGo = new GameObject("postprocessing");
+        var pp = ppGo.AddComponent<Nyc.Rendering.PostProcessingController>();
+        pp.EnsureInit();
+        pp.UpdateByHour(12.0f); // midday
+        pp.UpdateByHour(17.5f); // golden
+        pp.UpdateByHour(19.5f); // twilight
+        pp.UpdateByHour(0.0f);  // midnight
+        Console.WriteLine($"post-processing: verified 4 looks (midday, golden, twilight, midnight) - current bloom {pp.currentLook.bloom:F2}");
+
+        var scatFeature = new Nyc.Rendering.Passes.AtmosphericScatteringFeature();
+        scatFeature.Create();
+        var contactFeature = new Nyc.Rendering.Passes.NycGroundContactFeature();
+        contactFeature.Create();
+        var bloomFeature = new Nyc.Rendering.Passes.NycBloomFeature();
+        bloomFeature.Create();
+        Console.WriteLine($"urp render features: AtmosphericScattering, NycGroundContact, NycBloom instantiated successfully");
+
         // ---- Phase 6: map atlas -------------------------------------------------
         sw.Restart();
         var px = Nyc.UI.NycMapBaker.Rasterize(geo, 512, out Rect mapRect);

@@ -105,7 +105,7 @@ namespace UnityEngine.UIElements
     public class PointerMoveEvent : EventBase<PointerMoveEvent> { public Vector3 position; public Vector3 localPosition; public int pointerId; }
     public class PointerUpEvent : EventBase<PointerUpEvent> { public Vector3 position; public Vector3 localPosition; public int pointerId; }
     public class PointerCaptureOutEvent : EventBase<PointerCaptureOutEvent> { public int pointerId; }
-    public class WheelEvent : EventBase<WheelEvent> { public Vector3 delta; public Vector3 localPosition; public Vector3 position; }
+    public class WheelEvent : EventBase<WheelEvent> { public Vector3 delta; public Vector3 localPosition; public Vector3 position; public Vector2 localMousePosition => new Vector2(localPosition.x, localPosition.y); }
     public class ChangeEvent<T> : EventBase<ChangeEvent<T>> { public T newValue; public T previousValue; }
 
     public delegate void EventCallback<T>(T evt);

@@ -46,10 +46,12 @@ namespace Nyc.Gameplay.Traffic
 
             _meshes = new[]
             {
-                VehicleMeshFactory.CreateCar(false, true),
-                VehicleMeshFactory.CreateCar(false, false),
-                VehicleMeshFactory.CreateCar(true, false),
-                VehicleMeshFactory.CreateBus()
+                VehicleMeshFactory.CreateCar(false, true),  // 0: Taxi
+                VehicleMeshFactory.CreateCar(false, false), // 1: Sedan
+                VehicleMeshFactory.CreateCar(true, false),  // 2: SUV
+                VehicleMeshFactory.CreateBus(),             // 3: Bus
+                VehicleMeshFactory.CreatePoliceCar(),       // 4: Police
+                VehicleMeshFactory.CreateTruck()            // 5: Truck
             };
 
             _materials = new[]
@@ -57,14 +59,17 @@ namespace Nyc.Gameplay.Traffic
                 taxiMaterial ? taxiMaterial : MakeMaterial("Taxi", TaxiColor, 0.66f, 0.30f),
                 sedanMaterial ? sedanMaterial : MakeMaterial("Sedan", SedanColor, 0.70f, 0.45f),
                 suvMaterial ? suvMaterial : MakeMaterial("SUV", SuvColor, 0.55f, 0.25f),
-                busMaterial ? busMaterial : MakeMaterial("Bus", BusColor, 0.42f, 0.05f)
+                busMaterial ? busMaterial : MakeMaterial("Bus", BusColor, 0.42f, 0.05f),
+                MakeMaterial("Police", new Color(0.96f, 0.98f, 1.0f), 0.70f, 0.35f),
+                MakeMaterial("Truck", new Color(0.85f, 0.85f, 0.82f), 0.35f, 0.10f)
             };
 
-            _instances = new NativeArray<VehicleInstance>[4];
-            _matrices = new NativeArray<Matrix4x4>[4];
-            _params = new RenderParams[4];
+            int batchCount = _meshes.Length;
+            _instances = new NativeArray<VehicleInstance>[batchCount];
+            _matrices = new NativeArray<Matrix4x4>[batchCount];
+            _params = new RenderParams[batchCount];
 
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < batchCount; i++)
             {
                 _instances[i] = new NativeArray<VehicleInstance>(capacity, Allocator.Persistent);
                 _matrices[i] = new NativeArray<Matrix4x4>(capacity, Allocator.Persistent);
@@ -122,7 +127,7 @@ namespace Nyc.Gameplay.Traffic
         void OnDestroy()
         {
             if (!_ready) return;
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < _instances.Length; i++)
             {
                 if (_instances[i].IsCreated) _instances[i].Dispose();
                 if (_matrices[i].IsCreated) _matrices[i].Dispose();

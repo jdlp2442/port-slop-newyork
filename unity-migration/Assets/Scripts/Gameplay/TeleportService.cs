@@ -125,5 +125,56 @@ namespace Nyc.Gameplay
                 default: radius = heliRadius; height = heliHeight; break;
             }
         }
+
+        /// <summary>
+        /// Exact preset teleport locations matching TELEPORT_LOCATIONS in city-config.js.
+        /// </summary>
+        public static bool GetNamedTeleport(string id, out Vector2 pos, out float heading)
+        {
+            switch (id.ToLowerInvariant())
+            {
+                case "empire":
+                case "esb":
+                    pos = new Vector2(CityConfig.AvenueX("5") + 3.6f, CityConfig.StreetZ(36));
+                    heading = 0f;
+                    return true;
+                case "timessq":
+                case "times_square":
+                    pos = new Vector2(CityConfig.AvenueX("7") + 3.6f, CityConfig.StreetZ(46));
+                    heading = 0f;
+                    return true;
+                case "chrysler":
+                    pos = new Vector2(CityConfig.AvenueX("lex") + 3.6f, CityConfig.StreetZ(40));
+                    heading = Mathf.PI;
+                    return true;
+                case "grandcentral":
+                case "gct":
+                    pos = new Vector2(CityConfig.AvenueX("park") - 8.0f, CityConfig.StreetZ(40));
+                    heading = Mathf.PI;
+                    return true;
+                case "bryant":
+                case "bryantpark":
+                    pos = new Vector2(CityConfig.AvenueX("6") + 3.6f, CityConfig.StreetZ(41));
+                    heading = Mathf.PI * 0.5f;
+                    return true;
+                case "flatiron":
+                    pos = new Vector2(CityConfig.AvenueX("5") + 3.6f, CityConfig.StreetZ(25));
+                    heading = 0f;
+                    return true;
+                case "centralpark":
+                    pos = new Vector2(CityConfig.AvenueX("6") + 3.6f, CityConfig.StreetZ(57));
+                    heading = Mathf.PI;
+                    return true;
+                case "owtc":
+                case "wtc":
+                    pos = new Vector2(-305.7f, 5210f);
+                    heading = Mathf.Atan2(-204f + 305.7f, 5255.2f - 5210f);
+                    return true;
+                default:
+                    pos = Vector2.zero;
+                    heading = 0f;
+                    return false;
+            }
+        }
     }
 }

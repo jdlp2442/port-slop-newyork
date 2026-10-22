@@ -39,9 +39,86 @@ namespace Nyc.Gameplay.Traffic
                 b.Box(new Vector3(sx * 0.58f, 0.68f, -front), new Vector3(0.36f, 0.14f, 0.06f), Taillight);
             }
 
-            if (taxi) b.Box(new Vector3(0f, h + 0.12f, 0.1f), new Vector3(0.72f, 0.18f, 0.34f), Glass);
+            if (taxi)
+            {
+                // Detailed NYC Yellow Cab Rooftop Medallion Ad / Sign
+                b.Box(new Vector3(0f, h + 0.12f, 0.1f), new Vector3(0.72f, 0.18f, 0.34f), Glass);
+                b.Box(new Vector3(0f, h + 0.04f, 0.1f), new Vector3(0.78f, 0.04f, 0.38f), Body);
+            }
 
             return b.ToMesh(suv ? "VehicleSUV" : taxi ? "VehicleTaxi" : "VehicleSedan");
+        }
+
+        public static Mesh CreatePoliceCar()
+        {
+            var b = new MeshBuilder();
+            float h = 1.45f;
+            float w = 1.84f;
+            float len = 4.5f;
+
+            // Patrol cruiser chassis
+            b.Box(new Vector3(0f, 0.62f, 0f), new Vector3(w, 0.62f, len), Body);
+            b.Box(new Vector3(0f, h * 0.78f, 0.18f), new Vector3(w * 0.9f, 0.55f, len * 0.46f), Glass);
+
+            // Front push bumper (bullbar)
+            float front = -(len * 0.5f - 0.03f);
+            b.Box(new Vector3(0f, 0.62f, front - 0.12f), new Vector3(0.92f, 0.44f, 0.08f), Body);
+
+            // Rooftop emergency lightbar (red/blue lenses)
+            b.Box(new Vector3(0f, h + 0.08f, 0.12f), new Vector3(1.1f, 0.12f, 0.22f), Headlight);
+            b.Box(new Vector3(-0.35f, h + 0.08f, 0.12f), new Vector3(0.38f, 0.12f, 0.22f), Taillight);
+
+            // Wheels
+            float halfW = w * 0.5f - 0.1f;
+            float wheelZ = len * 0.30f;
+            foreach (float sx in new[] { -1f, 1f })
+                foreach (float sz in new[] { -1f, 1f })
+                    b.Box(new Vector3(sx * halfW, 0.34f, sz * wheelZ), new Vector3(0.24f, 0.64f, 0.64f), Tyre);
+
+            // Headlights & Taillights
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                b.Box(new Vector3(sx * 0.58f, 0.66f, front), new Vector3(0.36f, 0.16f, 0.06f), Headlight);
+                b.Box(new Vector3(sx * 0.58f, 0.68f, -front), new Vector3(0.36f, 0.14f, 0.06f), Taillight);
+            }
+
+            return b.ToMesh("VehiclePolice");
+        }
+
+        public static Mesh CreateTruck()
+        {
+            var b = new MeshBuilder();
+            const float w = 2.45f, len = 7.8f;
+
+            // Cab
+            b.Box(new Vector3(0f, 1.35f, -2.4f), new Vector3(w * 0.95f, 2.2f, 2.2f), Body);
+            b.Box(new Vector3(0f, 1.85f, -2.3f), new Vector3(w * 0.96f, 0.72f, 1.4f), Glass);
+
+            // Large Cargo Box
+            b.Box(new Vector3(0f, 1.95f, 0.9f), new Vector3(w, 2.8f, 4.9f), Body);
+
+            // Rear bumper & step
+            b.Box(new Vector3(0f, 0.45f, 3.4f), new Vector3(w * 0.9f, 0.2f, 0.35f), Body);
+
+            // Wheels: single front, dual rear
+            float halfW = w * 0.5f - 0.1f;
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                b.Box(new Vector3(sx * halfW, 0.44f, -2.4f), new Vector3(0.28f, 0.88f, 0.88f), Tyre);
+                b.Box(new Vector3(sx * halfW, 0.44f, 1.2f), new Vector3(0.34f, 0.88f, 0.88f), Tyre);
+                b.Box(new Vector3(sx * halfW, 0.44f, 2.4f), new Vector3(0.34f, 0.88f, 0.88f), Tyre);
+            }
+
+            // Lights
+            float front = -3.52f;
+            float rear = len * 0.5f - 0.52f;
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                b.Box(new Vector3(sx * 0.78f, 0.75f, front), new Vector3(0.38f, 0.2f, 0.06f), Headlight);
+                b.Box(new Vector3(sx * 0.85f, 0.65f, rear), new Vector3(0.35f, 0.22f, 0.06f), Taillight);
+            }
+
+            return b.ToMesh("VehicleTruck");
         }
 
         public static Mesh CreateBus()
@@ -53,6 +130,17 @@ namespace Nyc.Gameplay.Traffic
             b.Box(new Vector3(0f, 2.35f, 0.2f), new Vector3(w + 0.02f, 0.85f, len * 0.86f), Glass);
             b.Box(new Vector3(0f, 3.05f, 0f), new Vector3(w * 0.92f, 0.22f, len * 0.9f), Body);
 
+            // Rooftop AC & ventilation pods
+            b.Box(new Vector3(0f, 3.28f, -1.8f), new Vector3(1.7f, 0.35f, 2.6f), Body);
+            b.Box(new Vector3(0f, 3.28f, 2.4f), new Vector3(1.7f, 0.35f, 2.6f), Body);
+
+            // Folded front bike rack mounted to front bumper
+            float front = -(len * 0.5f - 0.03f);
+            b.Box(new Vector3(0f, 0.68f, front - 0.22f), new Vector3(1.6f, 0.35f, 0.28f), Body);
+
+            // Destination roll-sign box above front windscreen
+            b.Box(new Vector3(0f, 2.82f, front - 0.02f), new Vector3(1.4f, 0.32f, 0.12f), Glass);
+
             foreach (float sz in new[] { -1f, 1f })
             {
                 foreach (float sx in new[] { -1f, 1f })
@@ -60,7 +148,6 @@ namespace Nyc.Gameplay.Traffic
                           new Vector3(0.26f, 1.0f, 1.0f), Tyre);
             }
 
-            float front = -(len * 0.5f - 0.03f);
             foreach (float sx in new[] { -1f, 1f })
             {
                 b.Box(new Vector3(sx * 0.8f, 0.9f, front), new Vector3(0.4f, 0.22f, 0.06f), Headlight);

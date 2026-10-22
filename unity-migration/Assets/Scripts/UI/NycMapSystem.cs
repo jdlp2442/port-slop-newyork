@@ -231,7 +231,7 @@ namespace Nyc.UI
 
         void OnMapWheel(WheelEvent evt)
         {
-            Vector2 local = evt.localPosition;
+            Vector2 local = evt.localMousePosition;
             Vector2 before = ScreenToPixel(local);
 
             float factor = Mathf.Exp(-evt.delta.y * 0.0015f);

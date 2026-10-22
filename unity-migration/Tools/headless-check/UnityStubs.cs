@@ -12,6 +12,7 @@ namespace UnityEngine
         public static void Destroy(Object o) { }
         public static void DestroyImmediate(Object o) { }
         public static T FindFirstObjectByType<T>() where T : Object => null;
+        public static T FindObjectOfType<T>() where T : Object => null;
     }
 
     public struct Vector2
@@ -55,6 +56,7 @@ namespace UnityEngine
         public static Vector3 Cross(Vector3 a, Vector3 b) =>
             new Vector3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
         public static float Dot(Vector3 a, Vector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
+        public static float Distance(Vector3 a, Vector3 b) => (a - b).magnitude;
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
         public static Vector3 operator *(Vector3 a, float s) => new Vector3(a.x * s, a.y * s, a.z * s);
@@ -382,6 +384,8 @@ namespace UnityEditor
         public static void CreateAsset(UnityEngine.Object o, string path) { }
         public static void SaveAssets() { }
         public static void Refresh() { }
+        public static bool IsValidFolder(string path) => true;
+        public static string CreateFolder(string parentFolder, string newFolderName) => parentFolder + "/" + newFolderName;
     }
 
     public static class Selection { public static UnityEngine.Object activeObject; }
