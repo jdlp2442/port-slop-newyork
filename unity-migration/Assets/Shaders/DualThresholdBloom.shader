@@ -2,7 +2,8 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 {
     Properties
     {
-        _MainTex ("Source", 2D) = "white" {}
+        _BlitTexture ("Source", 2D) = "black" {}
+        _MainTex ("Fallback Source", 2D) = "black" {}
         _BloomTex ("Bloom", 2D) = "black" {}
     }
 
@@ -14,36 +15,17 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+        #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
-        struct Attributes
-        {
-            uint vertexID : SV_VertexID;
-        };
-
-        struct Varyings
-        {
-            float4 positionCS : SV_POSITION;
-            float2 uv         : TEXCOORD0;
-        };
-
+        TEXTURE2D(_BloomTex);
         TEXTURE2D(_MainTex);
         SAMPLER(sampler_MainTex);
-        TEXTURE2D(_BloomTex);
-        SAMPLER(sampler_BloomTex);
 
         CBUFFER_START(UnityPerMaterial)
             float4 _ThresholdParams; // x: threshold, y: softKnee, z: peakLimit (8.0), w: intensity
             float4 _GradingParams;   // x: exposure, y: contrast, z: saturation, w: vignette
             float4 _ColorBalance;    // rgb: balance, a: unused
         CBUFFER_END
-
-        Varyings Vert(Attributes input)
-        {
-            Varyings output;
-            output.positionCS = GetFullScreenTriangleVertexPosition(input.vertexID);
-            output.uv = GetFullScreenTriangleTexCoord(input.vertexID);
-            return output;
-        }
         ENDHLSL
 
         // Pass 0: Dual-threshold Prefilter (Extract bright emitters with peak limiting)
@@ -58,10 +40,12 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
             half4 FragPrefilter(Varyings input) : SV_Target
             {
-                float4 col = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 uv = input.texcoord.xy;
+
+                float4 col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
 
                 // Peak limiter from post-processing.js:
-                // max(max(col.r, col.g), col.b)
                 float peak = max(max(col.r, col.g), col.b);
                 float peakLimit = _ThresholdParams.z > 0.0 ? _ThresholdParams.z : 8.0;
                 float3 limited = col.rgb * (peakLimit / max(peak, peakLimit));
@@ -97,12 +81,15 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
             half4 FragBlur(Varyings input) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 uv = input.texcoord.xy;
                 float2 offset = _BlurOffset.xy;
-                float4 sum = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv) * 0.227027;
-                sum += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + offset * 1.384615) * 0.316216;
-                sum += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - offset * 1.384615) * 0.316216;
-                sum += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + offset * 3.230769) * 0.070270;
-                sum += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - offset * 3.230769) * 0.070270;
+
+                float4 sum = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv) * 0.227027;
+                sum += SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv + offset * 1.384615) * 0.316216;
+                sum += SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv - offset * 1.384615) * 0.316216;
+                sum += SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv + offset * 3.230769) * 0.070270;
+                sum += SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv - offset * 3.230769) * 0.070270;
                 return sum;
             }
             ENDHLSL
@@ -120,8 +107,11 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
             half4 FragComposite(Varyings input) : SV_Target
             {
-                float4 baseCol = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
-                float4 bloomCol = SAMPLE_TEXTURE2D(_BloomTex, sampler_BloomTex, input.uv);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 uv = input.texcoord.xy;
+
+                float4 baseCol = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
+                float4 bloomCol = SAMPLE_TEXTURE2D(_BloomTex, sampler_LinearClamp, uv);
 
                 float intensity = _ThresholdParams.w;
                 float3 color = baseCol.rgb + bloomCol.rgb * intensity;
@@ -149,7 +139,7 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
                 // Vignette
                 float aspect = _ScreenParams.x / _ScreenParams.y;
-                float2 uvShift = (input.uv - 0.5) * float2(aspect, 1.0);
+                float2 uvShift = (uv - 0.5) * float2(aspect, 1.0);
                 float radius = length(uvShift) / length(float2(aspect, 1.0) * 0.5);
                 float vignette = 1.0 - smoothstep(0.35, 1.0, radius) * _GradingParams.w;
                 color *= vignette;

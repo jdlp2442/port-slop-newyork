@@ -705,6 +705,53 @@ namespace Nyc.Generation
                                   start: new Vector2(911f, -1425f), end: new Vector2(2125f, -1401f),
                                   midRoosevelt: new Vector2(1480f, -1413f));
 
+            // Distant skyline bridges use the same suspension vocabulary as
+            // the source: two towers, a deck, catenary segments and hangers.
+            // Their real anchor points come from GEO.points, so this remains
+            // data-driven when the OSM extract is regenerated.
+            if (geo?.Points != null &&
+                geo.Points.TryGetValue("gwbManhattanTower", out var gwbStart) &&
+                geo.Points.TryGetValue("gwbNJTower", out var gwbEnd))
+            {
+                BuildSuspensionBridge(steelVerts, steelNorms, steelUvs, steelTris,
+                                      steelVerts, steelNorms, steelUvs, steelTris,
+                                      gwbStart, gwbEnd, towerH: 184f, deckW: 36f, stoneTowers: false);
+            }
+            if (geo?.Points != null &&
+                geo.Points.TryGetValue("verrazzanoStatenTower", out var vzStart) &&
+                geo.Points.TryGetValue("verrazzanoBrooklynTower", out var vzEnd))
+            {
+                BuildSuspensionBridge(steelVerts, steelNorms, steelUvs, steelTris,
+                                      steelVerts, steelNorms, steelUvs, steelTris,
+                                      vzStart, vzEnd, towerH: 211f, deckW: 31f, stoneTowers: false);
+            }
+
+            // The render meshes are intentionally lightweight, but their
+            // approach slabs and tower caissons still belong to the shared
+            // collision world.  Keep the bridge boxes in the source frame and
+            // use the same oriented-box convention as buildings.js.
+            AddBridgeColliders(new Vector2(408f, 4976f), new Vector2(1637f, 5322f), 26f, 4.2f,
+                               towerFractions: new[] { 0.33f, 0.67f });
+            AddBridgeColliders(new Vector2(903f, 4217f), new Vector2(1979f, 5042f), 36f, 4.2f,
+                               towerFractions: new[] { 0.33f, 0.67f });
+            AddBridgeColliders(new Vector2(1565f, 3666f), new Vector2(3092f, 3487f), 36f, 4.2f,
+                               towerFractions: new[] { 0.33f, 0.67f });
+            AddBridgeColliders(new Vector2(911f, -1425f), new Vector2(2125f, -1401f), 27f, 4.2f,
+                               towerFractions: new[] { 0.16f, 0.34f, 0.51f, 0.84f });
+
+            // Outer bridge anchors are present in GEO.points even though they
+            // are skyline geometry. Register their Manhattan approach boxes so
+            // teleports and helicopter/vehicle collision queries see the same
+            // obstruction as the source scene.
+            if (geo?.Points != null &&
+                geo.Points.TryGetValue("gwbManhattanTower", out var gwbA) &&
+                geo.Points.TryGetValue("gwbNJTower", out var gwbB))
+                AddBridgeColliders(gwbA, gwbB, 36f, 4.2f, new[] { 0.0f, 1.0f });
+            if (geo?.Points != null &&
+                geo.Points.TryGetValue("verrazzanoStatenTower", out var vzA) &&
+                geo.Points.TryGetValue("verrazzanoBrooklynTower", out var vzB))
+                AddBridgeColliders(vzA, vzB, 31f, 4.2f, new[] { 0.0f, 1.0f });
+
             if (steelVerts.Count > 0)
             {
                 var sGo = new GameObject("BridgeSteel");
@@ -744,6 +791,50 @@ namespace Nyc.Generation
                 mr.shadowCastingMode = ShadowCastingMode.On;
                 mr.receiveShadows = true;
             }
+        }
+
+        void AddBridgeColliders(Vector2 start, Vector2 end, float width, float maxY, float[] towerFractions)
+        {
+            Vector2 delta = end - start;
+            float length = delta.magnitude;
+            if (length < 1f) return;
+            Vector2 dir = delta / length;
+
+            // Only the two shore approaches are low enough to stop a player on
+            // the street below.  The suspended middle span remains traversable.
+            const float approach = 110f;
+            AddOrientedBridgeBox(start + dir * (approach * 0.5f), approach, width, maxY, dir);
+            AddOrientedBridgeBox(end - dir * (approach * 0.5f), approach, width, maxY, dir);
+
+            if (towerFractions == null) return;
+            for (int i = 0; i < towerFractions.Length; i++)
+            {
+                float t = Mathf.Clamp01(towerFractions[i]);
+                AddOrientedBridgeBox(start + delta * t, 20f, width + 10f, maxY + 110f, dir);
+            }
+        }
+
+        void AddOrientedBridgeBox(Vector2 center, float along, float across, float maxY, Vector2 dir)
+        {
+            float cs = dir.x;
+            float sn = -dir.y;
+            float ex = Mathf.Abs(cs) * along * 0.5f + Mathf.Abs(sn) * across * 0.5f;
+            float ez = Mathf.Abs(sn) * along * 0.5f + Mathf.Abs(cs) * across * 0.5f;
+            CollisionBoxes.Add(new CollisionBox
+            {
+                MinX = center.x - ex,
+                MaxX = center.x + ex,
+                MinZ = center.y - ez,
+                MaxZ = center.y + ez,
+                MaxY = maxY,
+                HasObb = true,
+                Cx = center.x,
+                Cz = center.y,
+                Hx = along * 0.5f,
+                Hz = across * 0.5f,
+                Cs = cs,
+                Sn = sn
+            });
         }
 
         static void BuildSuspensionBridge(List<Vector3> towerV, List<Vector3> towerN, List<Vector2> towerU, List<int> towerT,

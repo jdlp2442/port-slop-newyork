@@ -46,11 +46,16 @@ namespace UnityEngine
         public static Material skybox;
     }
 
+    public static class QualitySettings
+    {
+        public static UnityEngine.Rendering.RenderPipelineAsset renderPipeline;
+    }
+
     public class ReflectionProbe : Component { public void RenderProbe() { } }
 
     public static class DynamicGI { public static void UpdateEnvironment() { } }
 
-    public class Camera : Component { public static Camera main; public float fieldOfView; }
+    public class Camera : Component { public static Camera main; public float fieldOfView; public float nearClipPlane; public float farClipPlane; }
 
     public static class Time
     {
@@ -62,12 +67,17 @@ namespace UnityEngine
 namespace UnityEngine.Rendering
 {
     public class RenderPipelineAsset : ScriptableObject { }
-    public static class GraphicsSettings { public static RenderPipelineAsset currentRenderPipeline; }
+    public static class GraphicsSettings
+    {
+        public static RenderPipelineAsset currentRenderPipeline;
+        public static RenderPipelineAsset defaultRenderPipeline;
+    }
 
     public class Volume : Component
     {
         public VolumeProfile sharedProfile;
         public VolumeProfile profile;
+        public bool isGlobal;
     }
 
     public class VolumeProfile : ScriptableObject
@@ -166,9 +176,20 @@ namespace UnityEngine.Rendering.Universal
         AfterRendering = 1000
     }
 
+    [Flags]
+    public enum ScriptableRenderPassInput
+    {
+        None = 0,
+        Depth = 1,
+        Normal = 2,
+        Color = 4,
+        Motion = 8
+    }
+
     public abstract class ScriptableRenderPass
     {
         public RenderPassEvent renderPassEvent;
+        public void ConfigureInput(ScriptableRenderPassInput input) { }
         public virtual void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor) { }
         public virtual void Execute(ScriptableRenderContext context, ref RenderingData renderingData) { }
         public virtual void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData) { }
@@ -269,5 +290,27 @@ namespace UnityEngine.Rendering.Universal
     public class UniversalRenderPipelineAsset : RenderPipelineAsset
     {
         public float shadowDistance;
+        public ScriptableRendererData[] rendererDataList;
+        public int defaultRendererIndex;
+        public bool supportsHDR;
+        public static UniversalRenderPipelineAsset Create(ScriptableRendererData data) => new UniversalRenderPipelineAsset
+        {
+            rendererDataList = new[] { data }
+        };
+    }
+
+    public abstract class ScriptableRendererData : ScriptableObject
+    {
+        public System.Collections.Generic.List<ScriptableRendererFeature> rendererFeatures =
+            new System.Collections.Generic.List<ScriptableRendererFeature>();
+        public void SetDirty() { }
+    }
+
+    public class UniversalRendererData : ScriptableRendererData { }
+
+    public class UniversalAdditionalCameraData : UnityEngine.Component
+    {
+        public bool renderPostProcessing;
+        public int volumeLayerMask = ~0;
     }
 }

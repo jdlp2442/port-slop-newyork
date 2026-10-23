@@ -49,7 +49,7 @@ namespace Nyc.Gameplay
             if (!bike) bike = GetComponentInChildren<BikeController>(true);
             if (!helicopter) helicopter = GetComponentInChildren<HelicopterController>(true);
             if (!input) input = GetComponentInChildren<PlayerInputReader>(true);
-            if (!collision) collision = FindFirstObjectByType<CollisionWorld>();
+            if (!collision) collision = FindAnyObjectByType<CollisionWorld>();
             if (!teleport) teleport = GetComponentInChildren<TeleportService>(true);
 
             _all = new[] { (TravelController)person, car, bike, helicopter };

@@ -2,7 +2,8 @@ Shader "Hidden/Nyc/AtmosphericScattering"
 {
     Properties
     {
-        _MainTex ("Source", 2D) = "white" {}
+        _BlitTexture ("Source", 2D) = "black" {}
+        _MainTex ("Fallback Source", 2D) = "black" {}
     }
 
     SubShader
@@ -21,19 +22,9 @@ Shader "Hidden/Nyc/AtmosphericScattering"
             #pragma target 4.5
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-
-            struct Attributes
-            {
-                uint vertexID : SV_VertexID;
-            };
-
-            struct Varyings
-            {
-                float4 positionCS : SV_POSITION;
-                float2 uv         : TEXCOORD0;
-            };
 
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
@@ -44,14 +35,6 @@ Shader "Hidden/Nyc/AtmosphericScattering"
                 float4 _SunColor;       // rgb: sun color, a: nightFactor
                 float4 _HazeColor;      // rgb: haze color, a: inscatteringBoost
             CBUFFER_END
-
-            Varyings Vert(Attributes input)
-            {
-                Varyings output;
-                output.positionCS = GetFullScreenTriangleVertexPosition(input.vertexID);
-                output.uv = GetFullScreenTriangleTexCoord(input.vertexID);
-                return output;
-            }
 
             // Rayleigh phase function: P(theta) = 3/(16*PI) * (1 + cos^2(theta))
             float RayleighPhase(float cosTheta)
@@ -69,22 +52,25 @@ Shader "Hidden/Nyc/AtmosphericScattering"
 
             half4 Frag(Varyings input) : SV_Target
             {
-                float4 sceneColor = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 uv = input.texcoord.xy;
+
+                float4 sceneColor = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
 
                 #if UNITY_REVERSED_Z
-                    float rawDepth = SampleSceneDepth(input.uv);
+                    float rawDepth = SampleSceneDepth(uv);
                 #else
-                    float rawDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, SampleSceneDepth(input.uv));
+                    float rawDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, SampleSceneDepth(uv));
                 #endif
 
                 // Sky background: keep original skybox unless atmospheric haze softly blankets the horizon
                 float linearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
-                if (rawDepth <= 0.00001 || linearDepth > 15000.0)
+                if (rawDepth <= 0.00001 || linearDepth > 55000.0)
                 {
                     return sceneColor;
                 }
 
-                float3 positionWS = ComputeWorldSpacePosition(input.uv, rawDepth, UNITY_MATRIX_I_VP);
+                float3 positionWS = ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
                 float3 cameraPosWS = _WorldSpaceCameraPos;
                 float3 ray = positionWS - cameraPosWS;
                 float rayDistance = length(ray);

@@ -41,6 +41,7 @@ Shader "Nyc/VehiclePaint"
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
+            #pragma multi_compile _ DOTS_INSTANCING_ON
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -163,6 +164,7 @@ Shader "Nyc/VehiclePaint"
             #pragma vertex ShadowVert
             #pragma fragment ShadowFrag
             #pragma multi_compile_instancing
+            #pragma multi_compile _ DOTS_INSTANCING_ON
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
             #include "Includes/NycPasses.hlsl"

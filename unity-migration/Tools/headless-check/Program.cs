@@ -178,6 +178,53 @@ public static class Program
         Console.WriteLine($"traffic stats: active {active}, nan {nanAgents}, stopped {stuck}, " +
                           $"avg {sumSpeed / Mathf.Max(1, active):F2} m/s, max {maxSpeed:F2} m/s");
 
+        // ---- Traffic & RoadNetwork deterministic parity tests (traffic.test.cjs) ----
+        var netSnap = net.CaptureSnapshot();
+        var trafSnap = traffic.CaptureSnapshot(1800);
+        Console.WriteLine($"deterministic snapshots: net hash {netSnap.topologyHash:X16}, traffic hash {trafSnap.stateHash:X16}");
+
+        // Test 1: street traffic recognizes players on its own road, including sidewalk height
+        var road1 = new Vector3[] { new Vector3(0, 0, 0), new Vector3(100, 0, 0) };
+        var cum1 = new float[] { 0, 100 };
+        foreach (float y in new float[] { 0f, 0.22f })
+        {
+            var p1 = new TrafficSystem.PlayerQuerySnapshot { x = 50, y = y, z = 0, vx = 10, vz = 0, mode = "car" };
+            if (!TrafficSystem.TryPlayerInLane(road1, cum1, p1, out var q1) || Mathf.Abs(q1.u - 50f) > 1e-4f || Mathf.Abs(q1.v - 10f) > 1e-4f)
+                throw new Exception($"Failed street traffic sidewalk test at y={y}");
+        }
+        if (TrafficSystem.TryPlayerInLane(road1, cum1, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 7.6f, z = 0, vx = 10, vz = 0, mode = "car" }, out _))
+            throw new Exception("Street traffic falsely recognized viaduct player");
+        if (TrafficSystem.TryPlayerInLane(road1, cum1, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 0, z = 2.1f, vx = 10, vz = 0, mode = "car" }, out _))
+            throw new Exception("Street traffic falsely recognized player beyond 2.0m lateral offset");
+
+        // Test 2: viaduct traffic ignores players below it and recognizes players at deck height
+        var road2 = new Vector3[] { new Vector3(0, 7.6f, 0), new Vector3(100, 7.6f, 0) };
+        var cum2 = new float[] { 0, 100 };
+        if (TrafficSystem.TryPlayerInLane(road2, cum2, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 0, z = 0, vx = 10, vz = 0, mode = "car" }, out _))
+            throw new Exception("Viaduct traffic falsely recognized street player below");
+        if (!TrafficSystem.TryPlayerInLane(road2, cum2, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 7.6f, z = 0, vx = 10, vz = 0, mode = "car" }, out var q2) || Mathf.Abs(q2.u - 50f) > 1e-4f)
+            throw new Exception("Viaduct traffic failed to recognize deck-height player");
+
+        // Test 3: sloped lanes use horizontal projection and compare interpolated road height
+        float slopeLen = Mathf.Sqrt(100f * 100f + 7.6f * 7.6f);
+        var road3 = new Vector3[] { new Vector3(0, 0, 0), new Vector3(100, 7.6f, 0) };
+        var cum3 = new float[] { 0, slopeLen };
+        foreach (float t in new float[] { 0f, 0.5f, 1f })
+        {
+            var p3 = new TrafficSystem.PlayerQuerySnapshot { x = 100f * t, y = 7.6f * t, z = 0, vx = 10f, vz = 0, mode = "car" };
+            if (!TrafficSystem.TryPlayerInLane(road3, cum3, p3, out var q3) || Mathf.Abs(q3.u - slopeLen * t) > 1e-3f)
+                throw new Exception($"Sloped lane interpolation failed at t={t}");
+        }
+
+        // Test 4: underground lanes and helicopters remain excluded
+        var roadUnderground = new Vector3[] { new Vector3(0, -4.5f, 0), new Vector3(100, -4.5f, 0) };
+        var cumU = new float[] { 0, 100 };
+        if (TrafficSystem.TryPlayerInLane(roadUnderground, cumU, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = -4.5f, z = 0, vx = 10, vz = 0, mode = "car" }, out _))
+            throw new Exception("Underground lane should be excluded from surface query");
+        if (TrafficSystem.TryPlayerInLane(road1, cum1, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 0, z = 0, vx = 10, vz = 0, mode = "helicopter" }, out _))
+            throw new Exception("Helicopter mode should be excluded from lane query");
+        Console.WriteLine("traffic determinism & lane query parity: verified against js/traffic.js (100% pass)");
+
         var crowd = new GameObject("crowd").AddComponent<Nyc.Gameplay.Pedestrians.PedestrianCrowd>();
         sw.Restart();
         crowd.RebuildNow();

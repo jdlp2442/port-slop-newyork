@@ -13,11 +13,10 @@ MonoBehaviour:
   m_Name: NycGlobalPostProcessingProfile
   m_EditorClassIdentifier: 
   components:
-  - {fileID: 11400002}
-  - {fileID: 11400004}
-  - {fileID: 11400006}
-  - {fileID: 11400008}
-  - {fileID: 11400010}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
 --- !u!114 &11400002
 MonoBehaviour:
   m_ObjectHideFlags: 0

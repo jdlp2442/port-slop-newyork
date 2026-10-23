@@ -8,8 +8,24 @@ namespace Nyc.Editor
 {
     public static class NycVolumeProfileCreator
     {
+        public const string AssetPath = "Assets/Settings/NycGlobalPostProcessingProfile.asset";
+
         [MenuItem("NYC/Create or Update Post-Processing Volume Profile")]
         public static void CreateProfile()
+        {
+            var profile = EnsureProfileAsset();
+            Nyc.EditorTools.NycRenderPipelineSetup.EnsureConfigured();
+            var volume = Object.FindAnyObjectByType<Volume>();
+            if (volume != null)
+            {
+                volume.isGlobal = true;
+                volume.sharedProfile = profile;
+                EditorUtility.SetDirty(volume);
+            }
+            Debug.Log($"[NYC] VolumeProfile created/updated successfully at {AssetPath}");
+        }
+
+        public static VolumeProfile EnsureProfileAsset()
         {
             const string folderPath = "Assets/Settings";
             if (!AssetDatabase.IsValidFolder(folderPath))
@@ -17,13 +33,12 @@ namespace Nyc.Editor
                 AssetDatabase.CreateFolder("Assets", "Settings");
             }
 
-            const string assetPath = "Assets/Settings/NycGlobalPostProcessingProfile.asset";
-            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(assetPath);
+            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(AssetPath);
 
             if (profile == null)
             {
                 profile = ScriptableObject.CreateInstance<VolumeProfile>();
-                AssetDatabase.CreateAsset(profile, assetPath);
+                AssetDatabase.CreateAsset(profile, AssetPath);
             }
 
             // 1. Tonemapping ACES
@@ -68,7 +83,7 @@ namespace Nyc.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"[NYC] VolumeProfile created/updated successfully at {assetPath}");
+            return profile;
         }
     }
 }

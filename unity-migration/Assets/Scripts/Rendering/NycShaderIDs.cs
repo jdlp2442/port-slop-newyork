@@ -16,6 +16,20 @@ namespace Nyc.Rendering
         public static readonly int CanyonBounce    = Shader.PropertyToID("_NycCanyonBounce");
         public static readonly int Time            = Shader.PropertyToID("_NycTime");
 
+        // Full-screen URP pass parameters. Keeping these ids here makes the
+        // runtime contract explicit and prevents the passes from drifting away
+        // from the shader property names used by the WebGPU port.
+        public static readonly int FogParams       = Shader.PropertyToID("_FogParams");
+        public static readonly int PassSunDir      = Shader.PropertyToID("_SunDir");
+        public static readonly int PassSunColor    = Shader.PropertyToID("_SunColor");
+        public static readonly int HazeColor       = Shader.PropertyToID("_HazeColor");
+        public static readonly int ThresholdParams = Shader.PropertyToID("_ThresholdParams");
+        public static readonly int GradingParams   = Shader.PropertyToID("_GradingParams");
+        public static readonly int ColorBalance    = Shader.PropertyToID("_ColorBalance");
+        public static readonly int BlurOffset      = Shader.PropertyToID("_BlurOffset");
+        public static readonly int BloomTexture    = Shader.PropertyToID("_BloomTex");
+        public static readonly int AoParams        = Shader.PropertyToID("_AOParams");
+
         // Sky material
         public static readonly int Turbidity       = Shader.PropertyToID("_Turbidity");
         public static readonly int Rayleigh        = Shader.PropertyToID("_Rayleigh");

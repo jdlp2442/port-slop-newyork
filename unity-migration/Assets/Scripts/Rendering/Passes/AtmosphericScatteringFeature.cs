@@ -78,17 +78,13 @@ namespace Nyc.Rendering.Passes
         const string ProfilerTag = "NycAtmosphericScattering";
         static readonly int TempRTId = Shader.PropertyToID("_TempAtmosphericRT");
 
-        static readonly int FogParamsId = Shader.PropertyToID("_FogParams");
-        static readonly int SunDirId = Shader.PropertyToID("_SunDir");
-        static readonly int SunColorId = Shader.PropertyToID("_SunColor");
-        static readonly int HazeColorId = Shader.PropertyToID("_HazeColor");
-
         public AtmosphericScatteringPass(AtmosphericScatteringFeature.Settings settings, Material material)
         {
             _settings = settings;
             _material = material;
             renderPassEvent = settings.passEvent;
             _tempRT = new RenderTargetIdentifier(TempRTId);
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
         void UpdateMaterial()
@@ -107,12 +103,12 @@ namespace Nyc.Rendering.Passes
                 nightFactor = active.nightFactor;
             }
 
-            _material.SetVector(FogParamsId, new Vector4(_settings.fogDensity, _settings.heightFalloff, _settings.startDistance, _settings.maxDistance));
-            _material.SetVector(SunDirId, new Vector4(sunDir.x, sunDir.y, sunDir.z, sunIntensity));
-            _material.SetVector(SunColorId, new Vector4(sunColor.r, sunColor.g, sunColor.b, nightFactor));
+            _material.SetVector(NycShaderIDs.FogParams, new Vector4(_settings.fogDensity, _settings.heightFalloff, _settings.startDistance, _settings.maxDistance));
+            _material.SetVector(NycShaderIDs.PassSunDir, new Vector4(sunDir.x, sunDir.y, sunDir.z, sunIntensity));
+            _material.SetVector(NycShaderIDs.PassSunColor, new Vector4(sunColor.r, sunColor.g, sunColor.b, nightFactor));
 
             Color haze = _settings.hazeColor;
-            _material.SetVector(HazeColorId, new Vector4(haze.r, haze.g, haze.b, _settings.inscatteringBoost));
+            _material.SetVector(NycShaderIDs.HazeColor, new Vector4(haze.r, haze.g, haze.b, _settings.inscatteringBoost));
         }
 
 #if UNITY_6000_0_OR_NEWER

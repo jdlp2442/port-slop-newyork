@@ -23,9 +23,19 @@ namespace Nyc.Gameplay.Traffic
         [Header("Capacity")]
         public int capacity = 512;
 
+        [Header("Experimental BatchRendererGroup (Unity 6)")]
+        [Tooltip("When enabled, vehicle batches use BatchRendererGroup with custom culling; falls back to RenderMeshInstanced if unavailable.")]
+        public bool useBRG = true;
+        public bool useBRGForBatch0
+        {
+            get => useBRG;
+            set => useBRG = value;
+        }
+
         [Header("Vehicle Lights")]
         public VehicleLightsRenderer lightsRenderer;
 
+        NycVehicleBRGBackend[] _brgBackends;
         Mesh[] _meshes;
         Material[] _materials;
         NativeArray<VehicleInstance>[] _instances;
@@ -81,6 +91,24 @@ namespace Nyc.Gameplay.Traffic
                 };
             }
 
+            if (useBRG && _meshes.Length > 0 && _materials.Length > 0)
+            {
+                _brgBackends = new NycVehicleBRGBackend[_meshes.Length];
+                for (int i = 0; i < _meshes.Length; i++)
+                {
+                    var backend = new NycVehicleBRGBackend();
+                    if (backend.Initialize(_meshes[i], _materials[i], capacity))
+                    {
+                        _brgBackends[i] = backend;
+                    }
+                    else
+                    {
+                        backend.Dispose();
+                        _brgBackends[i] = null;
+                    }
+                }
+            }
+
             _ready = true;
         }
 
@@ -93,6 +121,8 @@ namespace Nyc.Gameplay.Traffic
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
             if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
+            // RenderMeshInstanced requires this flag on every material in the batch.
+            m.enableInstancing = true;
             return m;
         }
 
@@ -114,7 +144,14 @@ namespace Nyc.Gameplay.Traffic
                 };
                 job.Schedule(count, 64).Complete();
 
-                Graphics.RenderMeshInstanced(_params[b], _meshes[b], 0, _matrices[b], count);
+                if (useBRG && _brgBackends != null && b < _brgBackends.Length && _brgBackends[b] != null && _brgBackends[b].IsAvailable)
+                {
+                    _brgBackends[b].UpdateInstances(_matrices[b], count);
+                }
+                else
+                {
+                    Graphics.RenderMeshInstanced(_params[b], _meshes[b], 0, _matrices[b], count);
+                }
             }
 
             if (lightsRenderer != null)
@@ -126,6 +163,16 @@ namespace Nyc.Gameplay.Traffic
 
         void OnDestroy()
         {
+            if (_brgBackends != null)
+            {
+                for (int i = 0; i < _brgBackends.Length; i++)
+                {
+                    _brgBackends[i]?.Dispose();
+                    _brgBackends[i] = null;
+                }
+                _brgBackends = null;
+            }
+
             if (!_ready) return;
             for (int i = 0; i < _instances.Length; i++)
             {

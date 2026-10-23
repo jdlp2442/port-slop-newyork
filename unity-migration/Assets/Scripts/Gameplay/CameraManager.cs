@@ -65,7 +65,12 @@ namespace Nyc.Gameplay
         {
             if (!cam) cam = GetComponent<Camera>();
             if (!cam) cam = Camera.main;
-            if (!controllers) controllers = FindFirstObjectByType<ThirdPersonControllerManager>();
+            if (cam)
+            {
+                cam.nearClipPlane = 0.35f;
+                cam.farClipPlane = 60000f;
+            }
+            if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
         }
 
         void LateUpdate() => Tick(Time.deltaTime, Time.time);

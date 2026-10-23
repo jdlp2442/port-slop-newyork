@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b6d2f12bee692c4f882b8333e5e4c96, type: 3}
+  m_Name: TimeOfDay_twilight
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.TimeOfDayPreset
+  id: twilight
+  displayName: "Blue Hour \xB7 19:15"
+  hour: 19.25
+  sunDir: {x: -0.5218559, y: 0.36128488, z: -0.7727482}
+  sunColor: {r: 1, g: 0.5803922, b: 0.4, a: 1}
+  sunIntensity: 3.1
+  hemiSky: {r: 0.29803923, g: 0.42352942, b: 0.65882355, a: 1}
+  hemiGround: {r: 0.43137255, g: 0.3137255, b: 0.28235295, a: 1}
+  hemiIntensity: 0.85
+  skyTop: {r: 0.0627451, g: 0.13333334, b: 0.28235295, a: 1}
+  skyHorizon: {r: 0.72156864, g: 0.41960785, b: 0.42352942, a: 1}
+  turbidity: 9.5
+  rayleigh: 3.4
+  mieCoefficient: 0.01
+  mieDirectionalG: 0.9
+  cloudCoverage: 0.4
+  cloudDensity: 0.42
+  skyExposure: 0.115
+  nightFactor: 0.28
+  fogColor: {r: 0.20784314, g: 0.23529412, b: 0.34509805, a: 1}
+  fogDensity: 0.00032
+  envIntensity: 0.36
+  interiorGlow: 1.25
+  roadWetness: 0.55
+  canyonBounce: 0.32
+  exposure: 1.06
+  contrast: 1.1
+  saturation: 1.08
+  whiteBalance: {x: 1.025, y: 0.995, z: 1.015}
+  bloom: 0.28
+  bloomThreshold: 1.05

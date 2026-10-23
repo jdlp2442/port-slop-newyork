@@ -42,6 +42,7 @@ namespace Nyc.Core
 
         [Header("Collision & Gameplay")]
         public CollisionWorld collisionWorld;
+        public RoadNetwork roadNetwork;
         public TrafficSystem trafficSystem;
         public TrafficRenderer trafficRenderer;
         public VehicleLightsRenderer vehicleLightsRenderer;
@@ -131,8 +132,8 @@ namespace Nyc.Core
 
         void InitLightingAndPostFX()
         {
-            if (!lightingSystem) lightingSystem = FindFirstObjectByType<LightingSystem>();
-            if (!postProcessing) postProcessing = FindFirstObjectByType<PostProcessingController>();
+            if (!lightingSystem) lightingSystem = FindAnyObjectByType<LightingSystem>();
+            if (!postProcessing) postProcessing = FindAnyObjectByType<PostProcessingController>();
 
             if (lightingSystem)
             {
@@ -148,11 +149,11 @@ namespace Nyc.Core
 
         void InitProceduralMeshes()
         {
-            if (!cityMeshBuilder) cityMeshBuilder = FindFirstObjectByType<ManhattanMeshBuilder>();
-            if (!landmarkBuilder) landmarkBuilder = FindFirstObjectByType<LandmarkMeshBuilder>();
-            if (!boroughsBuilder) boroughsBuilder = FindFirstObjectByType<BoroughsMeshBuilder>();
-            if (!treeSystem) treeSystem = FindFirstObjectByType<TreeSystem>();
-            if (!streetDetailsSystem) streetDetailsSystem = FindFirstObjectByType<StreetDetailsSystem>();
+            if (!cityMeshBuilder) cityMeshBuilder = FindAnyObjectByType<ManhattanMeshBuilder>();
+            if (!landmarkBuilder) landmarkBuilder = FindAnyObjectByType<LandmarkMeshBuilder>();
+            if (!boroughsBuilder) boroughsBuilder = FindAnyObjectByType<BoroughsMeshBuilder>();
+            if (!treeSystem) treeSystem = FindAnyObjectByType<TreeSystem>();
+            if (!streetDetailsSystem) streetDetailsSystem = FindAnyObjectByType<StreetDetailsSystem>();
 
             if (cityMeshBuilder) cityMeshBuilder.Build();
             if (landmarkBuilder) landmarkBuilder.Build();
@@ -163,7 +164,7 @@ namespace Nyc.Core
 
         void InitCollisionAndSpatialIndex()
         {
-            if (!collisionWorld) collisionWorld = FindFirstObjectByType<CollisionWorld>();
+            if (!collisionWorld) collisionWorld = FindAnyObjectByType<CollisionWorld>();
 
             if (collisionWorld)
             {
@@ -184,10 +185,11 @@ namespace Nyc.Core
 
         void InitTrafficAndPedestrians()
         {
-            if (!trafficSystem) trafficSystem = FindFirstObjectByType<TrafficSystem>();
-            if (!trafficRenderer) trafficRenderer = FindFirstObjectByType<TrafficRenderer>();
-            if (!vehicleLightsRenderer) vehicleLightsRenderer = FindFirstObjectByType<VehicleLightsRenderer>();
-            if (!pedestrianCrowd) pedestrianCrowd = FindFirstObjectByType<PedestrianCrowd>();
+            if (!roadNetwork) roadNetwork = FindAnyObjectByType<RoadNetwork>();
+            if (!trafficSystem) trafficSystem = FindAnyObjectByType<TrafficSystem>();
+            if (!trafficRenderer) trafficRenderer = FindAnyObjectByType<TrafficRenderer>();
+            if (!vehicleLightsRenderer) vehicleLightsRenderer = FindAnyObjectByType<VehicleLightsRenderer>();
+            if (!pedestrianCrowd) pedestrianCrowd = FindAnyObjectByType<PedestrianCrowd>();
 
             if (vehicleLightsRenderer) vehicleLightsRenderer.EnsureInit();
 
@@ -198,6 +200,12 @@ namespace Nyc.Core
 
             if (trafficSystem)
             {
+                // TrafficSystem expects a populated lane graph. The editor bake creates the
+                // RoadNetwork component, but the graph must still be built after GeoData loads
+                // when entering Play from the saved scene.
+                if (roadNetwork != null && roadNetwork.Lanes.Length == 0 && CityConfig.Geo != null)
+                    roadNetwork.Build(CityConfig.Geo);
+                trafficSystem.network = roadNetwork;
                 trafficSystem.Build();
             }
 
@@ -209,8 +217,8 @@ namespace Nyc.Core
 
         void InitControllersAndCamera()
         {
-            if (!controllerManager) controllerManager = FindFirstObjectByType<ThirdPersonControllerManager>();
-            if (!cameraManager) cameraManager = FindFirstObjectByType<CameraManager>();
+            if (!controllerManager) controllerManager = FindAnyObjectByType<ThirdPersonControllerManager>();
+            if (!cameraManager) cameraManager = FindAnyObjectByType<CameraManager>();
 
             if (controllerManager)
             {
@@ -228,7 +236,7 @@ namespace Nyc.Core
 
         void InitSceneCulling()
         {
-            if (!cullingSystem) cullingSystem = FindFirstObjectByType<SceneCullingSystem>();
+            if (!cullingSystem) cullingSystem = FindAnyObjectByType<SceneCullingSystem>();
 
             if (cullingSystem)
             {
@@ -240,10 +248,10 @@ namespace Nyc.Core
 
         void InitUIAndMinimap()
         {
-            if (!hudDocument) hudDocument = FindFirstObjectByType<UIDocument>();
-            if (!hudController) hudController = FindFirstObjectByType<HUDController>();
-            if (!mapSystem) mapSystem = FindFirstObjectByType<NycMapSystem>();
-            if (!touchControls) touchControls = FindFirstObjectByType<TouchControlsController>();
+            if (!hudDocument) hudDocument = FindAnyObjectByType<UIDocument>();
+            if (!hudController) hudController = FindAnyObjectByType<HUDController>();
+            if (!mapSystem) mapSystem = FindAnyObjectByType<NycMapSystem>();
+            if (!touchControls) touchControls = FindAnyObjectByType<TouchControlsController>();
 
             if (hudController && controllerManager)
             {

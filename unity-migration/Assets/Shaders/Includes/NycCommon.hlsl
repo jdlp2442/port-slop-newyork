@@ -95,7 +95,9 @@ float3 NycBumpNormal(float height, float3 positionWS, float3 normalWS)
     float3 r1 = cross(dpdy, normalWS);
     float3 r2 = cross(normalWS, dpdx);
     float det = dot(dpdx, r1);
-    float3 grad = sign(det) * (dFdx(height) * r1 + dFdy(height) * r2);
+    // HLSL derivatives are ddx/ddy (the GLSL names dFdx/dFdy do not compile
+    // on Unity's DX12 shader compiler).
+    float3 grad = sign(det) * (ddx(height) * r1 + ddy(height) * r2);
     return normalize(abs(det) * normalWS - grad);
 }
 

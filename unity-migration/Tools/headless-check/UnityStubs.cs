@@ -12,6 +12,7 @@ namespace UnityEngine
         public static void Destroy(Object o) { }
         public static void DestroyImmediate(Object o) { }
         public static T FindFirstObjectByType<T>() where T : Object => null;
+        public static T FindAnyObjectByType<T>() where T : Object => null;
         public static T FindObjectOfType<T>() where T : Object => null;
     }
 
@@ -177,6 +178,7 @@ namespace UnityEngine
     {
         public static readonly List<GameObject> All = new List<GameObject>();
         public Transform transform;
+        public string tag;
         public readonly List<Component> components = new List<Component>();
         public GameObject() { transform = new Transform { gameObject = this }; All.Add(this); }
         public GameObject(string name) : this() { this.name = name; }
@@ -248,6 +250,7 @@ namespace UnityEngine
         public Material sharedMaterial;
         public Rendering.ShadowCastingMode shadowCastingMode;
         public bool receiveShadows;
+        public Bounds bounds;
     }
 
     public class MeshRenderer : Renderer { }
@@ -382,6 +385,7 @@ namespace UnityEditor
     {
         public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object => null;
         public static void CreateAsset(UnityEngine.Object o, string path) { }
+        public static void AddObjectToAsset(UnityEngine.Object o, UnityEngine.Object asset) { }
         public static void SaveAssets() { }
         public static void Refresh() { }
         public static bool IsValidFolder(string path) => true;

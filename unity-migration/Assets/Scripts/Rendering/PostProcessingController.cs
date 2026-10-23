@@ -109,6 +109,7 @@ namespace Nyc.Rendering
         Tonemapping _tonemapping;
         Vignette _vignette;
         bool _initialized;
+        float _lastHour = float.NaN;
 
         void Awake() => EnsureInit();
 
@@ -155,11 +156,39 @@ namespace Nyc.Rendering
 
                 if (!profile.TryGet(out _vignette))
                     _vignette = profile.Add<Vignette>(true);
+
+                // This profile is the global equivalent of the WebGPU final
+                // render pass.  Keeping it global avoids camera-dependent look
+                // changes when the player switches travel modes.
+                volume.isGlobal = true;
             }
 
             _initialized = true;
             currentLook = PostProcessingLook.Golden;
             ApplyLook(currentLook);
+        }
+
+        void LateUpdate()
+        {
+            EnsureInit();
+            Shader.SetGlobalFloat(NycShaderIDs.Time, Time.time);
+
+            // LightingSystem raises PresetChanged during its Update.  This
+            // second check also covers execution-order changes and editor
+            // scrubbing where the event can be missed.
+            var lighting = LightingSystem.Instance;
+            if (lighting != null && !float.IsNaN(lighting.Hour) &&
+                (float.IsNaN(_lastHour) || ClockDelta(_lastHour, lighting.Hour) > 0.001f))
+            {
+                _lastHour = lighting.Hour;
+                UpdateByHour(lighting.Hour);
+            }
+        }
+
+        static float ClockDelta(float a, float b)
+        {
+            float d = Mathf.Abs(a - b);
+            return Mathf.Min(d, 24f - d);
         }
 
         void OnLightingPresetChanged(TimeOfDayPreset preset)
@@ -204,6 +233,7 @@ namespace Nyc.Rendering
 
             currentLook = look;
             ApplyLook(look);
+            _lastHour = hour;
         }
 
         /// <summary>

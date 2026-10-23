@@ -604,6 +604,30 @@ async function initApp() {
   await precompileShaders();
   markInit('compile');
 
+  // URL query params for testing, visual regression & reproducible captures:
+  // e.g. ?loc=midtown&time=golden&camera=chase
+  const queryParams = new URLSearchParams(window.location.search);
+  const qTime = queryParams.get('time');
+  const qLoc = queryParams.get('loc');
+  const qCam = queryParams.get('camera');
+  if (qTime) selectTime(qTime);
+  if (qCam) selectCamera(qCam, true);
+  if (qLoc) {
+    if (qLoc === 'midtown') teleportTo(0, 0, Math.PI);
+    else if (qLoc === 'times_square' && window.NYC.TELEPORT_LOCATIONS.timessq) {
+      const loc = window.NYC.TELEPORT_LOCATIONS.timessq;
+      teleportTo(loc.x, loc.z, loc.heading);
+    }
+    else if (qLoc === 'central_park' && window.NYC.TELEPORT_LOCATIONS.centralpark) {
+      const loc = window.NYC.TELEPORT_LOCATIONS.centralpark;
+      teleportTo(loc.x, loc.z, loc.heading);
+    }
+    else if (qLoc === 'one_wtc' && window.NYC.TELEPORT_LOCATIONS.owtc) {
+      const loc = window.NYC.TELEPORT_LOCATIONS.owtc;
+      teleportTo(loc.x, loc.z, loc.heading);
+    }
+  }
+
   // 6. Animation Loop
   let lastTime = performance.now();
   let elapsed = 0;

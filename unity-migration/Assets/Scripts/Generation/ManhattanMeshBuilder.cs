@@ -421,8 +421,9 @@ namespace Nyc.Generation
             int floors = rng.Range(p.FloorsMin, p.FloorsMax + 1);
             float h = floors * p.Storey;
             float tone = rng.Range(0.15f, 0.9f);
+            float seed = rng.NextFloat();
             bool shops = street[0] || street[1];
-            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), 0, 255);
+            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), (byte)(seed * 255f), 255);
 
             EmitBox(frame, lot, 0f, h, street, shops, tone, p.Style, col, true);
             EmitCornice(frame, lot, h, tone);
@@ -434,14 +435,16 @@ namespace Nyc.Generation
         {
             int floors = rng.Range(p.FloorsMin, p.FloorsMax + 1);
             int towerFloors = rng.Range(p.TowerFloorsMin, p.TowerFloorsMax + 1);
-            // buildings.js `slender`: a shaft may not rise more than ~9x its narrow side.
-            int cap = Mathf.Max(floors + 4, Mathf.FloorToInt(Mathf.Min(lot.Width, lot.Depth) * 9f / p.Storey));
+            // buildings.js `slender`: a shaft may not rise more than ~7x its
+            // narrow side, preventing needles on small irregular lots.
+            int cap = Mathf.Max(floors + 4, Mathf.FloorToInt(Mathf.Min(lot.Width, lot.Depth) * 7f / p.Storey));
             towerFloors = Mathf.Min(towerFloors, cap);
 
             float totalH = towerFloors * p.Storey;
             float tone = rng.Range(0.15f, 0.9f);
+            float seed = rng.NextFloat();
             bool shops = street[0] || street[1];
-            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), 0, 255);
+            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), (byte)(seed * 255f), 255);
 
             // Choose tower typology: 1916 Zoning Deco Wedding Cake, International Style Slab, or Slender Supertall
             float roll = rng.NextFloat();
@@ -668,6 +671,15 @@ namespace Nyc.Generation
                      Vector2.zero, Vector2.zero, Vector2.zero, wood);
             }
 
+            // Three dark steel hoop bands are part of the classic NYC tank
+            // silhouette and keep the cedar staves readable at distance.
+            Color32 steel = new Color32(42, 46, 50, 255);
+            for (int band = 0; band < 3; band++)
+            {
+                float by = y0 + (band == 0 ? 0.35f : band == 1 ? 1.85f : 3.15f);
+                EmitWaterTankHoop(f, b, cx, cz, by, rad * 1.03f, steel);
+            }
+
             // Conical roof
             Vector3 apex = f.P(cx, y1 + 1.5f, cz);
             for (int i = 0; i < sides; i++)
@@ -692,6 +704,26 @@ namespace Nyc.Generation
                 float lz = cz + Mathf.Sin(a) * 1.15f;
                 EmitSolidBox(f, new RectXZ(lx - 0.12f, lx + 0.12f, lz - 0.12f, lz + 0.12f), y, y0,
                              new Color32(40, 44, 48, 255));
+            }
+        }
+
+        void EmitWaterTankHoop(BoxFrame f, MeshBuf b, float cx, float cz, float y,
+                               float radius, Color32 color)
+        {
+            const int sides = 8;
+            const float halfHeight = 0.055f;
+            for (int i = 0; i < sides; i++)
+            {
+                float a0 = i * Mathf.PI * 2f / sides;
+                float a1 = (i + 1) * Mathf.PI * 2f / sides;
+                Vector3 p0 = f.P(cx + Mathf.Cos(a0) * radius, y - halfHeight, cz + Mathf.Sin(a0) * radius);
+                Vector3 p1 = f.P(cx + Mathf.Cos(a1) * radius, y - halfHeight, cz + Mathf.Sin(a1) * radius);
+                Vector3 p2 = f.P(cx + Mathf.Cos(a1) * radius, y + halfHeight, cz + Mathf.Sin(a1) * radius);
+                Vector3 p3 = f.P(cx + Mathf.Cos(a0) * radius, y + halfHeight, cz + Mathf.Sin(a0) * radius);
+                float am = (a0 + a1) * 0.5f;
+                Vector3 n = f.N(Mathf.Cos(am), 0f, Mathf.Sin(am));
+                Quad(b, 1, p0, p1, p2, p3, n, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero,
+                     Vector2.zero, Vector2.zero, Vector2.zero, color);
             }
         }
 
@@ -855,7 +887,9 @@ namespace Nyc.Generation
 
         Material DefaultFacade()
         {
-            var m = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "FacadeFallback" };
+            var s = Shader.Find("Nyc/Facade");
+            if (!s) s = Shader.Find("Universal Render Pipeline/Lit");
+            var m = new Material(s) { name = "FacadeFallback" };
             m.SetColor("_BaseColor", new Color(0.72f, 0.68f, 0.6f));
             return m;
         }

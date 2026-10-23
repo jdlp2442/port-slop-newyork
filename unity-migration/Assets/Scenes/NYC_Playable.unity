@@ -1,0 +1,1790 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!29 &1
+OcclusionCullingSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_OcclusionBakeSettings:
+    smallestOccluder: 5
+    smallestHole: 0.25
+    backfaceThreshold: 100
+  m_SceneGUID: 00000000000000000000000000000000
+  m_OcclusionCullingData: {fileID: 0}
+--- !u!104 &2
+RenderSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 10
+  m_Fog: 1
+  m_FogColor: {r: 0.8627451, g: 0.77254903, b: 0.68235296, a: 1}
+  m_FogMode: 3
+  m_FogDensity: 0.00024
+  m_LinearFogStart: 0
+  m_LinearFogEnd: 300
+  m_AmbientSkyColor: {r: 0.89380395, g: 1.0853333, b: 1.3349019, a: 1.48}
+  m_AmbientEquatorColor: {r: 1.0272942, g: 0.94313735, b: 0.9518432, a: 1.48}
+  m_AmbientGroundColor: {r: 1.1607844, g: 0.8009412, b: 0.56878436, a: 1.48}
+  m_AmbientIntensity: 1
+  m_AmbientMode: 1
+  m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
+  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_HaloStrength: 0.5
+  m_FlareStrength: 1
+  m_FlareFadeSpeed: 3
+  m_HaloTexture: {fileID: 0}
+  m_SpotCookie: {fileID: 10001, guid: 0000000000000000e000000000000000, type: 0}
+  m_DefaultReflectionMode: 0
+  m_DefaultReflectionResolution: 128
+  m_ReflectionBounces: 1
+  m_ReflectionIntensity: 0.54
+  m_CustomReflection: {fileID: 0}
+  m_Sun: {fileID: 0}
+  m_UseRadianceAmbientProbe: 0
+--- !u!157 &3
+LightmapSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 13
+  m_BakeOnSceneLoad: 0
+  m_GISettings:
+    serializedVersion: 2
+    m_BounceScale: 1
+    m_IndirectOutputScale: 1
+    m_AlbedoBoost: 1
+    m_EnvironmentLightingMode: 0
+    m_EnableBakedLightmaps: 1
+    m_EnableRealtimeLightmaps: 0
+  m_LightmapEditorSettings:
+    serializedVersion: 12
+    m_Resolution: 2
+    m_BakeResolution: 40
+    m_AtlasSize: 1024
+    m_AO: 0
+    m_AOMaxDistance: 1
+    m_CompAOExponent: 1
+    m_CompAOExponentDirect: 0
+    m_ExtractAmbientOcclusion: 0
+    m_Padding: 2
+    m_LightmapParameters: {fileID: 0}
+    m_LightmapsBakeMode: 1
+    m_TextureCompression: 1
+    m_ReflectionCompression: 2
+    m_MixedBakeMode: 2
+    m_BakeBackend: 2
+    m_PVRSampling: 1
+    m_PVRDirectSampleCount: 32
+    m_PVRSampleCount: 512
+    m_PVRBounces: 2
+    m_PVREnvironmentSampleCount: 256
+    m_PVREnvironmentReferencePointCount: 2048
+    m_PVRFilteringMode: 1
+    m_PVRDenoiserTypeDirect: 2
+    m_PVRDenoiserTypeIndirect: 2
+    m_PVRDenoiserTypeAO: 2
+    m_PVRFilterTypeDirect: 0
+    m_PVRFilterTypeIndirect: 0
+    m_PVRFilterTypeAO: 0
+    m_PVREnvironmentMIS: 1
+    m_PVRCulling: 1
+    m_PVRFilteringGaussRadiusDirect: 1
+    m_PVRFilteringGaussRadiusIndirect: 1
+    m_PVRFilteringGaussRadiusAO: 1
+    m_PVRFilteringAtrousPositionSigmaDirect: 0.5
+    m_PVRFilteringAtrousPositionSigmaIndirect: 2
+    m_PVRFilteringAtrousPositionSigmaAO: 1
+    m_ExportTrainingData: 0
+    m_TrainingDataDestination: TrainingData
+    m_LightProbeSampleCountMultiplier: 4
+  m_LightingDataAsset: {fileID: 20201, guid: 0000000000000000f000000000000000, type: 0}
+  m_LightingSettings: {fileID: 0}
+--- !u!196 &4
+NavMeshSettings:
+  serializedVersion: 2
+  m_ObjectHideFlags: 0
+  m_BuildSettings:
+    serializedVersion: 3
+    agentTypeID: 0
+    agentRadius: 0.5
+    agentHeight: 2
+    agentSlope: 45
+    agentClimb: 0.4
+    ledgeDropHeight: 0
+    maxJumpAcrossDistance: 0
+    minRegionArea: 2
+    manualCellSize: 0
+    cellSize: 0.16666667
+    manualTileSize: 0
+    tileSize: 256
+    buildHeightMesh: 0
+    maxJobWorkers: 0
+    preserveTilesOutsideBounds: 0
+    debug:
+      m_Flags: 0
+  m_NavMeshData: {fileID: 0}
+--- !u!1 &147044603
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 147044605}
+  - component: {fileID: 147044604}
+  m_Layer: 0
+  m_Name: Pedestrians
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &147044604
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 147044603}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 836d0d0d76788324f8026d2ab9be920d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.Pedestrians.PedestrianCrowd
+  material: {fileID: 0}
+  maxWalkers: 1200
+  radius: 320
+  rebuildDistance: 45
+  sidewalkInset: 1.9
+  viewCamera: {fileID: 0}
+  controllers: {fileID: 0}
+  walkerCount: 0
+  blockCount: 0
+--- !u!4 &147044605
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 147044603}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &235334944
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 235334946}
+  - component: {fileID: 235334945}
+  m_Layer: 0
+  m_Name: CameraSystem
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &235334945
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 235334944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87ec98c6f0e2f414dbc9f0e5140c77d5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.CameraManager
+  cam: {fileID: 570817546}
+  controllers: {fileID: 981520354}
+  presets:
+  - id: chase
+    displayName: 3rd-Person Chase
+    follow: 1
+    fov: 56
+  - id: action
+    displayName: Low-Angle Action
+    follow: 1
+    fov: 60
+  - id: pov
+    displayName: First-Person / Cockpit
+    follow: 1
+    fov: 68
+  - id: centralPark
+    displayName: Central Park Oasis
+    follow: 0
+    fov: 52
+  - id: fifthAve
+    displayName: 5th Ave & Empire State
+    follow: 0
+    fov: 48
+  - id: timesSquare
+    displayName: Times Square Crossroads
+    follow: 0
+    fov: 58
+  - id: chryslerGCT
+    displayName: "42nd St \xB7 Chrysler & GCT"
+    follow: 0
+    fov: 50
+  - id: observatory
+    displayName: Empire State 86th Deck
+    follow: 0
+    fov: 52
+  - id: bryantPark
+    displayName: Bryant Park & NYPL
+    follow: 0
+    fov: 52
+  - id: waterfront
+    displayName: East River & Skyline
+    follow: 0
+    fov: 46
+  - id: drone
+    displayName: Auto-Director Aerial
+    follow: 0
+    fov: 50
+  activePresetId: chase
+  orbitYawOffset: 0
+  orbitPitchOffset: 0.09
+  zoomMultiplier: 1
+  bryantParkLawn: {x: -260, y: -150, z: 40, w: 120}
+  bryantParkTop: 1.3
+--- !u!4 &235334946
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 235334944}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &280370047
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 280370050}
+  - component: {fileID: 280370049}
+  - component: {fileID: 280370048}
+  m_Layer: 0
+  m_Name: NYC_World
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &280370048
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 280370047}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a7bd21a35966597429d071ed63702ed8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Core.NycMainBootstrapper
+  autoStartOnAwake: 1
+  initialTravelMode: 1
+  startHour: 17.75
+  lightingSystem: {fileID: 280370049}
+  postProcessing: {fileID: 796716278}
+  cityMeshBuilder: {fileID: 708902948}
+  landmarkBuilder: {fileID: 2002232011}
+  boroughsBuilder: {fileID: 881099344}
+  treeSystem: {fileID: 2060319849}
+  streetDetailsSystem: {fileID: 2071250917}
+  cullingSystem: {fileID: 1860546212}
+  collisionWorld: {fileID: 1471358617}
+  roadNetwork: {fileID: 0}
+  trafficSystem: {fileID: 1524329602}
+  trafficRenderer: {fileID: 1524329601}
+  vehicleLightsRenderer: {fileID: 1524329599}
+  pedestrianCrowd: {fileID: 147044604}
+  controllerManager: {fileID: 981520354}
+  cameraManager: {fileID: 235334945}
+  hudDocument: {fileID: 1118969623}
+  hudController: {fileID: 1118969622}
+  mapSystem: {fileID: 1118969621}
+  touchControls: {fileID: 1118969619}
+--- !u!114 &280370049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 280370047}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b9cfcfe8d9684d4ab7b6bf55d45aad7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.LightingSystem
+  presets:
+  - {fileID: 11400000, guid: 9da1bf205178525458c4a9567c7f0533, type: 2}
+  - {fileID: 11400000, guid: d5e91ecd51a7d3a45bee94e9657f608f, type: 2}
+  - {fileID: 11400000, guid: 9e7ad0b0b2e28834bb0f64e2e1ddd80c, type: 2}
+  - {fileID: 11400000, guid: 0026befb5c7f44241b99f248e636aebe, type: 2}
+  sun: {fileID: 1710705187}
+  skyMaterial: {fileID: 0}
+  volumeProfile: {fileID: 11400000, guid: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d, type: 2}
+  environmentProbe: {fileID: 0}
+  runCycle: 0
+  hour: 17.75
+  realMinutesPerGameHour: 2
+  ambientRefreshInterval: 0.25
+  streetShadowDistance: 300
+  airShadowDistance: 720
+  airborneAltitude: 80
+  centralParkBounds: {x: -845.1, y: -13.6, z: 1397.5, w: 5491.2}
+  islandBounds: {x: -2117, y: -6512, z: 2569, w: 7090}
+--- !u!4 &280370050
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 280370047}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1710705188}
+  - {fileID: 570817548}
+  - {fileID: 796716280}
+  - {fileID: 708902949}
+  - {fileID: 2002232012}
+  - {fileID: 881099345}
+  - {fileID: 2060319850}
+  - {fileID: 2071250918}
+  - {fileID: 1471358618}
+  - {fileID: 1200955048}
+  - {fileID: 1524329600}
+  - {fileID: 147044605}
+  - {fileID: 981520353}
+  - {fileID: 235334946}
+  - {fileID: 1860546213}
+  - {fileID: 1118969620}
+  - {fileID: 812942912}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &570817545
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 570817548}
+  - component: {fileID: 570817546}
+  - component: {fileID: 570817547}
+  m_Layer: 0
+  m_Name: Main Camera
+  m_TagString: MainCamera
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!20 &570817546
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 570817545}
+  m_Enabled: 1
+  serializedVersion: 2
+  m_ClearFlags: 1
+  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.3
+  far clip plane: 1000
+  field of view: 56
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 3
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!114 &570817547
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 570817545}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 1
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
+--- !u!4 &570817548
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 570817545}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &708902947
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 708902949}
+  - component: {fileID: 708902948}
+  m_Layer: 0
+  m_Name: ManhattanBuilder
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &708902948
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 708902947}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c82d6b8ab9bb8b41853553d7be5f82a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Generation.ManhattanMeshBuilder
+  geoRelativePath: nyc/nyc-geodata.js
+  buildLand: 1
+  buildSidewalks: 1
+  buildBuildings: 1
+  buildRoads: 1
+  buildParks: 1
+  buildProps: 1
+  buildLandmarks: 1
+  buildBoroughs: 1
+  chunkSize: 750
+  seed: 10019
+  towerChanceScale: 1
+  maxWaterTowers: 3000
+  facadeMaterial: {fileID: 2100000, guid: 719565820cf381f4f886234b7c20761f, type: 2}
+  solidMaterial: {fileID: 2100000, guid: b6b028df03722e0469a6103f2bb4507b, type: 2}
+  sidewalkMaterial: {fileID: 2100000, guid: 41a64598cd581054d8c64f65744dbcae, type: 2}
+  roadMaterial: {fileID: 2100000, guid: ef1ebc7a46ced4348bde4ba88967dc61, type: 2}
+  parkMaterial: {fileID: 2100000, guid: abd238ed24f654448b3aa87f2b01d8fe, type: 2}
+  landMaterial: {fileID: 2100000, guid: ff3c2b276c600564fa3247139424bf11, type: 2}
+  waterMaterial: {fileID: 2100000, guid: 36a158a4b9260f74195506725c4615ce, type: 2}
+  buildingCount: 0
+  boxCount: 0
+  vertexCount: 0
+  chunkCount: 0
+  buildSeconds: 0
+--- !u!4 &708902949
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 708902947}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1073387456}
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &796716277
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 796716280}
+  - component: {fileID: 796716279}
+  - component: {fileID: 796716278}
+  m_Layer: 0
+  m_Name: Global_Volume
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &796716278
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 796716277}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8dc06b8278e7cf4093a051923bd76a1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.PostProcessingController
+  volume: {fileID: 796716279}
+  currentLook:
+    name: 
+    hour: 0
+    exposure: 0
+    contrast: 0
+    saturation: 0
+    balance: {r: 0, g: 0, b: 0, a: 0}
+    bloom: 0
+    bloomThreshold: 0
+  vignetteIntensity: 0.12
+  vignetteSmoothness: 0.4
+--- !u!114 &796716279
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 796716277}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.Volume
+  m_IsGlobal: 1
+  priority: 0
+  blendDistance: 0
+  weight: 1
+  sharedProfile: {fileID: 11400000, guid: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d, type: 2}
+--- !u!4 &796716280
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 796716277}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &812942911
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 812942912}
+  - component: {fileID: 812942913}
+  m_Layer: 0
+  m_Name: RemoteSession
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &812942912
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 812942911}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &812942913
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 812942911}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c102e8380613ed944951a22549cd8cb7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Networking.NycRemoteSession
+  endpoint: ws://localhost:3000
+  connectOnPlay: 0
+  sendTelemetry: 1
+  telemetryInterval: 0.25
+--- !u!1 &881099343
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 881099345}
+  - component: {fileID: 881099344}
+  m_Layer: 0
+  m_Name: Boroughs
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &881099344
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 881099343}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e69f752a865959d4fb06600411c719f0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Generation.BoroughsMeshBuilder
+  buildLandMasses: 1
+  buildPalisadesRidge: 1
+  buildSignatureTowers: 1
+  buildPiers: 1
+  buildBridges: 1
+  buildHarborLandmarks: 1
+  landMaterial: {fileID: 0}
+  bulkheadMaterial: {fileID: 0}
+  palisadesMaterial: {fileID: 0}
+  boroughBuildingMaterial: {fileID: 0}
+  bridgeSteelMaterial: {fileID: 0}
+  bridgeStoneMaterial: {fileID: 0}
+  pierDeckMaterial: {fileID: 0}
+  pierPileMaterial: {fileID: 0}
+  statueCopperMaterial: {fileID: 0}
+--- !u!4 &881099345
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 881099343}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &981520351
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 981520353}
+  - component: {fileID: 981520354}
+  - component: {fileID: 981520352}
+  m_Layer: 0
+  m_Name: PlayerControllers
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &981520352
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 981520351}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 14e43b6ea171b594eb201fdcb7df77a2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.PlayerInputReader
+  InputEnabled: 1
+--- !u!4 &981520353
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 981520351}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1576761101}
+  - {fileID: 1631171268}
+  - {fileID: 1106519138}
+  - {fileID: 1870533909}
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &981520354
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 981520351}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: db005631acad27642a38aa404dab9fd9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.ThirdPersonControllerManager
+  input: {fileID: 981520352}
+  collision: {fileID: 1471358617}
+  teleport: {fileID: 0}
+  person: {fileID: 1576761102}
+  car: {fileID: 1631171269}
+  bike: {fileID: 1106519139}
+  helicopter: {fileID: 1870533910}
+  startMode: 1
+  sidewalkHeight: 0.22
+  centralParkGroundY: 0.06
+  idlePedestrianWalks: 0
+--- !u!1 &1073387455
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1073387456}
+  m_Layer: 0
+  m_Name: Manhattan
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1073387456
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1073387455}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 708902949}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1106519137
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1106519138}
+  - component: {fileID: 1106519139}
+  m_Layer: 0
+  m_Name: Bike
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1106519138
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1106519137}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 981520353}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1106519139
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1106519137}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5439c2ee0faa6f34fab03a29aed3b706, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.BikeController
+  Position: {x: 0, y: 0}
+  Height: 0
+  Heading: 0
+  Speed: 0
+  ChaseDistance: 4.8
+  ChaseHeight: 2.05
+  CameraTargetOffset: {x: 0, y: 1.35, z: 0}
+  LookUpBias: 1.55
+  maxSpeed: 12.8
+  boostMaxSpeed: 19
+  accel: 9
+  boostAccel: 13.5
+  reverseFactor: 0.6
+  reverseLimit: 4.5
+  coastDamping: 2.4
+  turnRate: 2.15
+  leanMax: 0.34
+  leanResponse: 9
+  wheelRadius: 0.35
+  gearRatio: 3.2
+  radius: 0.65
+  LeanAngle: 0
+  PedalPhase: 0
+  WheelSpin: 0
+--- !u!1 &1118969618
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1118969620}
+  - component: {fileID: 1118969623}
+  - component: {fileID: 1118969622}
+  - component: {fileID: 1118969621}
+  - component: {fileID: 1118969619}
+  m_Layer: 0
+  m_Name: UI_HUD
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1118969619
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118969618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 346dd3ef163cdfb47aebf257c613ac74, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.UI.TouchControlsController
+  uiDocument: {fileID: 1118969623}
+  inputReader: {fileID: 981520352}
+  controllerManager: {fileID: 981520354}
+  deadZone: 0.15
+  maxRadius: 44
+  forceEnableOnDesktop: 0
+--- !u!4 &1118969620
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118969618}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1118969621
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118969618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0761bdf75642f3a418096ab14f029e21, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.UI.NycMapSystem
+  controllers: {fileID: 981520354}
+  cameras: {fileID: 0}
+  minimapRadius: 260
+  minZoom: 0.2
+  maxZoom: 4
+--- !u!114 &1118969622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118969618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8ad3fd3d7fe4c34f85c8bc10e6b900e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.UI.HUDController
+  controllers: {fileID: 981520354}
+  cameras: {fileID: 235334945}
+  lighting: {fileID: 280370049}
+  mapSystem: {fileID: 0}
+  refreshInterval: 0.2
+--- !u!114 &1118969623
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118969618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
+  m_PanelSettings: {fileID: 0}
+  m_ParentUI: {fileID: 0}
+  sourceAsset: {fileID: 9197481963319205126, guid: d620238cf686c134f84dbc25427e00a4, type: 3}
+  m_SortingOrder: 0
+  m_Position: 0
+  m_WorldSpaceSizeMode: 1
+  m_WorldSpaceWidth: 1920
+  m_WorldSpaceHeight: 1080
+  m_PivotReferenceSize: 0
+  m_Pivot: 0
+  m_WorldSpaceCollider: {fileID: 0}
+--- !u!1 &1200955047
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1200955048}
+  - component: {fileID: 1200955049}
+  m_Layer: 0
+  m_Name: RoadNetwork
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1200955048
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1200955047}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1200955049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1200955047}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 28f4de9727a5c7b4cac4186afaebcd8e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.Traffic.RoadNetwork
+  roadCount: 0
+  laneCount: 0
+  connectionCount: 0
+--- !u!1 &1471358616
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1471358618}
+  - component: {fileID: 1471358617}
+  m_Layer: 0
+  m_Name: CollisionWorld
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1471358617
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1471358616}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7950b00020c193941a829fe8ae9a46f0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.CollisionWorld
+  Bounds: {x: -2117, y: 2569, z: -7090, w: 6512}
+--- !u!4 &1471358618
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1471358616}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1524329598
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1524329600}
+  - component: {fileID: 1524329602}
+  - component: {fileID: 1524329601}
+  - component: {fileID: 1524329599}
+  m_Layer: 0
+  m_Name: Traffic
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1524329599
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524329598}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8833fcb2fecba584bb78c6db8c35ff05, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.Traffic.VehicleLightsRenderer
+  beamMaterial: {fileID: 0}
+  tailMaterial: {fileID: 0}
+  headlightColor: {r: 1, g: 0.97, b: 0.92, a: 0.65}
+  taillightColor: {r: 1, g: 0.08, b: 0.04, a: 0.85}
+  beamDistance: 30
+  beamSpreadWidth: 4.5
+  nightIntensity: 1
+--- !u!4 &1524329600
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524329598}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1524329601
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524329598}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62443466992a15c45a24fee0fdf77030, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.Traffic.TrafficRenderer
+  taxiMaterial: {fileID: 0}
+  sedanMaterial: {fileID: 0}
+  suvMaterial: {fileID: 0}
+  busMaterial: {fileID: 0}
+  capacity: 512
+  lightsRenderer: {fileID: 1524329599}
+--- !u!114 &1524329602
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524329598}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80e40c3a884b612428fd72a104555396, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.Traffic.TrafficSystem
+  network: {fileID: 0}
+  renderer: {fileID: 0}
+  controllers: {fileID: 0}
+  viewCamera: {fileID: 0}
+  cars: 200
+  buses: 32
+  lookAhead: 70
+  spawnMin: 100
+  spawnMax: 300
+  despawnRadius: 1200
+  nearRadius: 350
+  maxAccel: 9
+  activeCount: 0
+  spawnFailures: 0
+--- !u!1 &1576761100
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1576761101}
+  - component: {fileID: 1576761102}
+  m_Layer: 0
+  m_Name: Person
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1576761101
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1576761100}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 981520353}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1576761102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1576761100}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88f5e98932a334141a1d2f86483f5e94, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.PedestrianController
+  Position: {x: 0, y: 0}
+  Height: 0
+  Heading: 0
+  Speed: 0
+  ChaseDistance: 4.3
+  ChaseHeight: 1.95
+  CameraTargetOffset: {x: 0, y: 1.55, z: 0}
+  LookUpBias: 1.55
+  walkSpeed: 4.4
+  sprintSpeed: 8.2
+  turnRate: 2.6
+  radius: 0.48
+  jumpVelocity: 5.2
+  gravity: 14.5
+  VerticalVelocity: 0
+  IsGrounded: 0
+--- !u!1 &1631171267
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1631171268}
+  - component: {fileID: 1631171269}
+  m_Layer: 0
+  m_Name: Car
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1631171268
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1631171267}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 981520353}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1631171269
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1631171267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11901d684b3fe8248ae8de05bb9f5ae9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.CarController
+  Position: {x: 0, y: 0}
+  Height: 0
+  Heading: 0
+  Speed: 0
+  ChaseDistance: 6.9
+  ChaseHeight: 2.12
+  CameraTargetOffset: {x: 0, y: 0.96, z: 0}
+  LookUpBias: 0.52
+  maxSpeed: 23.5
+  boostMaxSpeed: 36
+  accel: 14
+  boostAccel: 21
+  reverseFactor: 0.45
+  coastDamping: 2.8
+  steerAngleMax: 0.52
+  steerResponse: 10
+  turnGain: 2.4
+  turnSpeedReference: 8
+  halfWidth: 0.86
+  halfLength: 2.18
+  wheelRadius: 0.35
+  springK: 68
+  dampC: 11.2
+  Vx: 0
+  Vz: 0
+  AngularVelocity: 0
+  SteerAngle: 0
+  PitchVelocity: 0
+  RollVelocity: 0
+  ChassisPitch: 0
+  ChassisRoll: 0
+  HeaveY: 0
+  HeaveVelocity: 0
+  WheelSpin: 0
+  Throttle: 0
+--- !u!1 &1710705186
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1710705188}
+  - component: {fileID: 1710705187}
+  m_Layer: 0
+  m_Name: Directional Light (Sun)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!108 &1710705187
+Light:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1710705186}
+  m_Enabled: 1
+  serializedVersion: 13
+  m_Type: 2
+  m_Color: {r: 1, g: 0.7921569, b: 0.57254905, a: 1}
+  m_Intensity: 5.8
+  m_Range: 10
+  m_SpotAngle: 30
+  m_InnerSpotAngle: 21.80208
+  m_CookieSize2D: {x: 0.5, y: 0.5}
+  m_Shadows:
+    m_Type: 2
+    m_Resolution: -1
+    m_CustomResolution: -1
+    m_Strength: 1
+    m_Bias: 0.05
+    m_NormalBias: 0.35
+    m_NearPlane: 0.2
+    m_CullingMatrixOverride:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_UseCullingMatrixOverride: 0
+  m_Cookie: {fileID: 0}
+  m_DrawHalo: 0
+  m_Flare: {fileID: 0}
+  m_RenderMode: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingLayerMask: 1
+  m_Lightmapping: 4
+  m_LightShadowCasterMode: 0
+  m_AreaSize: {x: 1, y: 1}
+  m_BounceIntensity: 1
+  m_ColorTemperature: 6570
+  m_UseColorTemperature: 0
+  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_UseBoundingSphereOverride: 0
+  m_UseViewFrustumForShadowCasterCull: 1
+  m_ForceVisible: 0
+  m_ShapeRadius: 0.025
+  m_ShadowAngle: 0
+  m_LightUnit: 1
+  m_LuxAtDistance: 1
+  m_EnableSpotReflector: 1
+--- !u!4 &1710705188
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1710705186}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.29323098, y: 0.26965937, z: -0.08659529, w: 0.9131269}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1860546211
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1860546213}
+  - component: {fileID: 1860546212}
+  m_Layer: 0
+  m_Name: SceneCulling
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1860546212
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1860546211}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1de0d1ddb2f8fe14abf766bf90979c4b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.SceneCullingSystem
+  viewCamera: {fileID: 0}
+  cellSize: 400
+  minPropCullDistance: 350
+  maxBuildingCullDistance: 2200
+  enableFrustumCulling: 1
+  enableDistanceCulling: 1
+  totalChunks: 0
+  visibleChunks: 0
+  culledChunks: 0
+  totalRenderers: 0
+--- !u!4 &1860546213
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1860546211}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1870533908
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1870533909}
+  - component: {fileID: 1870533910}
+  m_Layer: 0
+  m_Name: Helicopter
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1870533909
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1870533908}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 981520353}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1870533910
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1870533908}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 65c7ebf6ea57fe64d9cd8bf9e462624b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Gameplay.HelicopterController
+  Position: {x: 0, y: 0}
+  Height: 0
+  Heading: 0
+  Speed: 0
+  ChaseDistance: 11
+  ChaseHeight: 3.3
+  CameraTargetOffset: {x: 0, y: 0.5, z: 0}
+  LookUpBias: 0.2
+  maxHorizSpeed: 32
+  boostMaxSpeed: 52
+  maxVertSpeed: 16
+  horizAccel: 24
+  vertAccel: 22
+  horizDamping: 1.8
+  vertDamping: 3.5
+  yawRate: 1.45
+  minHeight: 0.25
+  maxHeight: 380
+  radius: 4.5
+  maxPitch: 0.24
+  maxRoll: 0.28
+  attitudeResponse: 5
+  bobAmplitude: 0.18
+  bobRate: 2.6
+  VerticalSpeed: 0
+  PitchAngle: 0
+  RollAngle: 0
+  Bob: 0
+--- !u!1 &2002232010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2002232012}
+  - component: {fileID: 2002232011}
+  m_Layer: 0
+  m_Name: Landmarks
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2002232011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2002232010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfd7b0942650a4140b95e35ef1de4cd1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Generation.LandmarkMeshBuilder
+  buildEmpireState: 1
+  buildChrysler: 1
+  buildOneVanderbilt: 1
+  buildGrandCentralMetLife: 1
+  buildBryantParkLibrary: 1
+  buildTimesSquare: 1
+  buildRockefellerCenter: 1
+  buildCitigroupCenter: 1
+  buildFlatiron: 1
+  buildSeagram: 1
+  buildOneWtc: 1
+  buildPark432: 1
+  buildVessel: 1
+  buildOculus: 1
+  buildWoolworth: 1
+  buildHudsonYards30: 1
+  buildUnSecretariat: 1
+  buildStatueOfLiberty: 1
+  limestoneTrimMaterial: {fileID: 0}
+  stainlessSteelMaterial: {fileID: 0}
+  chryslerCrownMaterial: {fileID: 0}
+  darkBronzeFrameMaterial: {fileID: 0}
+  copperRoofMaterial: {fileID: 0}
+  beaconMaterial: {fileID: 0}
+  warmFloodMaterial: {fileID: 0}
+  marbleStoneMaterial: {fileID: 0}
+  silverCurtainMaterial: {fileID: 0}
+  bronzeCurtainMaterial: {fileID: 0}
+  parkGrassMaterial: {fileID: 0}
+  waterMaterial: {fileID: 0}
+  signMaterial: {fileID: 0}
+--- !u!4 &2002232012
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2002232010}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2060319848
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2060319850}
+  - component: {fileID: 2060319849}
+  m_Layer: 0
+  m_Name: Vegetation
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2060319849
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060319848}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bc4abb0bb3a9fd44f96f776b2362ad46, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.TreeSystem
+  foliageMaterial: {fileID: 0}
+  trunkMaterial: {fileID: 0}
+  buildStreetTrees: 1
+  buildParkTrees: 1
+  buildCentralParkTrees: 1
+  maxInstances: 8000
+--- !u!4 &2060319850
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060319848}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2071250916
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2071250918}
+  - component: {fileID: 2071250917}
+  m_Layer: 0
+  m_Name: StreetDetails
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2071250917
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2071250916}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0e66dac7df48a0242902eaccc99cfb77, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.StreetDetailsSystem
+  trafficSignalPoleMaterial: {fileID: 0}
+  trafficSignalLensMaterial: {fileID: 0}
+  streetlightMaterial: {fileID: 0}
+  streetlightGlowMaterial: {fileID: 0}
+  steamStackOrangeMaterial: {fileID: 0}
+  steamStackWhiteMaterial: {fileID: 0}
+  steamParticleMaterial: {fileID: 0}
+  hydrantMaterial: {fileID: 0}
+  mailboxMaterial: {fileID: 0}
+  litterBasketMaterial: {fileID: 0}
+  subwayEntranceMaterial: {fileID: 0}
+  greenGlobeMaterial: {fileID: 0}
+  bakedSmokeTexture: {fileID: 0}
+  buildSignals: 1
+  buildStreetlights: 1
+  buildSteamStacks: 1
+  buildHydrantsAndBaskets: 1
+  buildSubwayEntrances: 1
+--- !u!4 &2071250918
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2071250916}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 280370050}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1660057539 &9223372036854775807
+SceneRoots:
+  m_ObjectHideFlags: 0
+  m_Roots:
+  - {fileID: 280370050}

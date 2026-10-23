@@ -2,6 +2,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.UIElements;
 using Nyc.Generation;
 using Nyc.Gameplay;
@@ -10,6 +11,7 @@ using Nyc.Gameplay.Pedestrians;
 using Nyc.Rendering;
 using Nyc.UI;
 using Nyc.Core;
+using Nyc.Networking;
 
 namespace Nyc.EditorTools
 {
@@ -20,11 +22,38 @@ namespace Nyc.EditorTools
     public static class ManhattanBakeMenu
     {
         const string Root = "Assets/Generated";
+        const string PlayableScenePath = "Assets/Scenes/NYC_Playable.unity";
+
+        [MenuItem("NYC/0. Create and Save Playable Scene", priority = -20)]
+        public static void CreateAndSavePlayableScene()
+        {
+#if UNITY_EDITOR
+            const string scenesFolder = "Assets/Scenes";
+            if (!AssetDatabase.IsValidFolder(scenesFolder))
+                AssetDatabase.CreateFolder("Assets", "Scenes");
+
+            var scene = UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+                UnityEditor.SceneManagement.NewSceneMode.Single);
+            BuildCompletePlayableScene();
+            UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene, PlayableScenePath);
+
+            var scenes = new[] { new EditorBuildSettingsScene(PlayableScenePath, true) };
+            EditorBuildSettings.scenes = scenes;
+            AssetDatabase.SaveAssets();
+            UnityEditor.SceneManagement.EditorSceneManager.OpenScene(PlayableScenePath);
+            Debug.Log($"[NYC] Playable scene saved and opened at {PlayableScenePath}. Press Play.");
+#endif
+        }
 
         [MenuItem("NYC/Build Complete Playable Scene", priority = -10)]
         public static void BuildCompletePlayableScene()
         {
             Debug.Log("[NYC] Starting 1-Click Complete Playable Scene Setup...");
+
+            // Create the persistent URP asset and register all NYC renderer
+            // features before scene objects request their camera renderer.
+            NycRenderPipelineSetup.EnsureConfigured();
 
             // 1. Ensure GeoData is imported into StreamingAssets
             NycGeoDataImporter.ImportGeoData(runNodeBuilder: false);
@@ -51,9 +80,27 @@ namespace Nyc.EditorTools
                 light.shadows = LightShadows.Soft;
                 sunGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
             }
+            var sun = sunGo.GetComponent<Light>();
+            if (!sun) sun = sunGo.AddComponent<Light>();
 
             var lightingSystem = rootGo.GetComponent<LightingSystem>();
             if (!lightingSystem) lightingSystem = rootGo.AddComponent<LightingSystem>();
+
+            // A blank Unity scene has no camera. Create the tagged URP camera
+            // up front so CameraManager and the post-processing volume have a
+            // deterministic target on the first Play press.
+            var mainCamera = Object.FindAnyObjectByType<Camera>();
+            if (!mainCamera)
+            {
+                var cameraGo = new GameObject("Main Camera");
+                cameraGo.transform.SetParent(rootGo.transform, false);
+                cameraGo.tag = "MainCamera";
+                mainCamera = cameraGo.AddComponent<Camera>();
+                var cameraData = cameraGo.AddComponent<UniversalAdditionalCameraData>();
+                cameraData.renderPostProcessing = true;
+                cameraData.volumeLayerMask = ~0;
+                mainCamera.fieldOfView = 56f;
+            }
 
             // Post-Processing Volume
             var volGo = GameObject.Find("Global_Volume");
@@ -64,9 +111,20 @@ namespace Nyc.EditorTools
             }
             var vol = volGo.GetComponent<Volume>();
             if (!vol) vol = volGo.AddComponent<Volume>();
+            vol.isGlobal = true;
+            vol.sharedProfile = EnsureVolumeProfile();
             var postFX = volGo.GetComponent<PostProcessingController>();
             if (!postFX) postFX = volGo.AddComponent<PostProcessingController>();
             postFX.volume = vol;
+
+            var presets = new TimeOfDayPreset[]
+            {
+                AssetDatabase.LoadAssetAtPath<TimeOfDayPreset>("Assets/ScriptableObjects/City/TimeOfDay_golden.asset"),
+                AssetDatabase.LoadAssetAtPath<TimeOfDayPreset>("Assets/ScriptableObjects/City/TimeOfDay_midday.asset"),
+                AssetDatabase.LoadAssetAtPath<TimeOfDayPreset>("Assets/ScriptableObjects/City/TimeOfDay_twilight.asset"),
+                AssetDatabase.LoadAssetAtPath<TimeOfDayPreset>("Assets/ScriptableObjects/City/TimeOfDay_midnight.asset")
+            };
+            lightingSystem.Configure(presets, sun, vol.sharedProfile);
 
             // Procedural Mesh Builders
             var meshBuilder = FindOrCreateBuilder();
@@ -110,7 +168,7 @@ namespace Nyc.EditorTools
             if (!streetDetailsSys) streetDetailsSys = streetDetailsGo.AddComponent<StreetDetailsSystem>();
 
             // Collision World
-            var world = Object.FindFirstObjectByType<CollisionWorld>();
+            var world = Object.FindAnyObjectByType<CollisionWorld>();
             if (!world)
             {
                 var go = new GameObject("CollisionWorld");
@@ -119,7 +177,7 @@ namespace Nyc.EditorTools
             }
 
             // Road Network & Traffic
-            var net = Object.FindFirstObjectByType<RoadNetwork>();
+            var net = Object.FindAnyObjectByType<RoadNetwork>();
             if (!net)
             {
                 var go = new GameObject("RoadNetwork");
@@ -199,7 +257,7 @@ namespace Nyc.EditorTools
             var camSys = camGo.GetComponent<CameraManager>();
             if (!camSys) camSys = camGo.AddComponent<CameraManager>();
             camSys.controllers = ctrlMgr;
-            if (Camera.main) camSys.cam = Camera.main;
+            camSys.cam = mainCamera ? mainCamera : Camera.main;
 
             // Scene Culling System
             var cullingGo = GameObject.Find("SceneCulling");
@@ -252,6 +310,7 @@ namespace Nyc.EditorTools
             bootstrapper.streetDetailsSystem = streetDetailsSys;
             bootstrapper.cullingSystem = cullingSys;
             bootstrapper.collisionWorld = world;
+            bootstrapper.roadNetwork = net;
             bootstrapper.trafficSystem = trafficSys;
             bootstrapper.trafficRenderer = trafficRend;
             bootstrapper.vehicleLightsRenderer = vehicleLights;
@@ -262,6 +321,18 @@ namespace Nyc.EditorTools
             bootstrapper.hudController = hudCtrl;
             bootstrapper.mapSystem = mapSys;
             bootstrapper.touchControls = touchCtrl;
+
+            // Optional transport seam for browser tools / future multiplayer. It is deliberately
+            // disabled by default so a missing local server never blocks Play.
+            var remoteGo = GameObject.Find("RemoteSession");
+            if (!remoteGo)
+            {
+                remoteGo = new GameObject("RemoteSession");
+                remoteGo.transform.SetParent(rootGo.transform, false);
+            }
+            var remoteSession = remoteGo.GetComponent<NycRemoteSession>();
+            if (!remoteSession) remoteSession = remoteGo.AddComponent<NycRemoteSession>();
+            remoteSession.connectOnPlay = false;
 
             EditorUtility.SetDirty(rootGo);
             EditorSceneMarkDirty();
@@ -345,7 +416,7 @@ namespace Nyc.EditorTools
                 return;
             }
 
-            var world = Object.FindFirstObjectByType<CollisionWorld>();
+            var world = Object.FindAnyObjectByType<CollisionWorld>();
             if (!world)
             {
                 var go = new GameObject("CollisionWorld");
@@ -383,7 +454,7 @@ namespace Nyc.EditorTools
                 CityConfig.Initialize(geo);
             }
 
-            var net = Object.FindFirstObjectByType<RoadNetwork>();
+            var net = Object.FindAnyObjectByType<RoadNetwork>();
             if (!net)
             {
                 var go = new GameObject("RoadNetwork");
@@ -391,7 +462,7 @@ namespace Nyc.EditorTools
             }
             net.Build(CityConfig.Geo);
 
-            var system = Object.FindFirstObjectByType<TrafficSystem>();
+            var system = Object.FindAnyObjectByType<TrafficSystem>();
             if (!system)
             {
                 var go = new GameObject("Traffic");
@@ -403,11 +474,11 @@ namespace Nyc.EditorTools
 
             system.network = net;
             system.renderer = renderer;
-            system.controllers = Object.FindFirstObjectByType<ThirdPersonControllerManager>();
+            system.controllers = Object.FindAnyObjectByType<ThirdPersonControllerManager>();
             system.viewCamera = Camera.main;
             system.Build();
 
-            var crowd = Object.FindFirstObjectByType<PedestrianCrowd>();
+            var crowd = Object.FindAnyObjectByType<PedestrianCrowd>();
             if (!crowd)
             {
                 var go = new GameObject("Pedestrians");
@@ -427,7 +498,7 @@ namespace Nyc.EditorTools
 
         static ManhattanMeshBuilder FindOrCreateBuilder()
         {
-            var found = Object.FindFirstObjectByType<ManhattanMeshBuilder>();
+            var found = Object.FindAnyObjectByType<ManhattanMeshBuilder>();
             if (found) return found;
             var go = new GameObject("ManhattanBuilder");
             Undo.RegisterCreatedObjectUndo(go, "Create ManhattanBuilder");
@@ -450,6 +521,37 @@ namespace Nyc.EditorTools
             m.enableInstancing = false;
             AssetDatabase.CreateAsset(m, path);
             return m;
+        }
+
+        static VolumeProfile EnsureVolumeProfile()
+        {
+            const string path = "Assets/Settings/NycGlobalPostProcessingProfile.asset";
+            if (!AssetDatabase.IsValidFolder("Assets/Settings"))
+                AssetDatabase.CreateFolder("Assets", "Settings");
+
+            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(path);
+            if (!profile)
+            {
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                AssetDatabase.CreateAsset(profile, path);
+            }
+            if (!profile.TryGet(out Tonemapping tone)) tone = profile.Add<Tonemapping>(true);
+            tone.mode.Override(TonemappingMode.ACES);
+            if (!profile.TryGet(out ColorAdjustments grade)) grade = profile.Add<ColorAdjustments>(true);
+            grade.postExposure.Override(0f);
+            grade.contrast.Override(12f);
+            grade.saturation.Override(8f);
+            grade.colorFilter.Override(new Color(1.045f, 1f, 0.955f, 1f));
+            if (!profile.TryGet(out Bloom bloom)) bloom = profile.Add<Bloom>(true);
+            bloom.threshold.Override(1.2f);
+            bloom.intensity.Override(0.24f);
+            bloom.scatter.Override(0.4f);
+            if (!profile.TryGet(out Vignette vignette)) vignette = profile.Add<Vignette>(true);
+            vignette.intensity.Override(0.12f);
+            vignette.smoothness.Override(0.4f);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            return profile;
         }
 
         static void EditorSceneMarkDirty()

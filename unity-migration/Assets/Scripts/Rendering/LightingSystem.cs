@@ -50,6 +50,18 @@ namespace Nyc.Rendering
         public static LightingSystem Instance { get; private set; }
         public event Action<TimeOfDayPreset> PresetChanged;
 
+        /// <summary>Editor/bootstrap hook used by the one-click scene builder.</summary>
+        public void Configure(TimeOfDayPreset[] presetAssets, Light sunLight, VolumeProfile profile)
+        {
+            presets = presetAssets ?? Array.Empty<TimeOfDayPreset>();
+            sun = sunLight;
+            volumeProfile = profile;
+            _sorted = (TimeOfDayPreset[])presets.Clone();
+            Array.Sort(_sorted, (a, b) => a.hour.CompareTo(b.hour));
+            CacheVolume();
+            if (_sorted.Length > 0) Apply(Evaluate(hour));
+        }
+
         TimeOfDayPreset _blend;
         TimeOfDayPreset[] _sorted;
         Bloom _bloom;
@@ -116,6 +128,12 @@ namespace Nyc.Rendering
                     DynamicGI.UpdateEnvironment();
                 }
             }
+
+            // The WebGPU materials receive live uniform values every frame.  URP
+            // keeps global shader state between cameras, so re-publish the active
+            // preset even when the clock is paused or a reflection probe is not
+            // being refreshed.
+            if (Active != null) PushCityGlobals(Active);
 
             UpdateShadowDistance();
         }

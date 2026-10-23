@@ -19,6 +19,7 @@ namespace Nyc.Gameplay.Traffic
         {
             public int Id;
             public Vector2[] Points;
+            public Vector3[] Points3D;   // 3D lane points (x, y elevation, z)
             public float[] Cum;          // cumulative length at each point
             public float Length;
             public float HalfWidth;
@@ -29,8 +30,47 @@ namespace Nyc.Gameplay.Traffic
             public int Dir;              // 1 forward, -1 reversed (both are baked as separate lanes)
         }
 
-        public Lane[] Lanes = System.Array.Empty<Lane>();
-        public int[][] Next = System.Array.Empty<int[]>();
+        [System.Serializable]
+        public struct RoadNetworkSnapshot
+        {
+            public int roadCount;
+            public int laneCount;
+            public int connectionCount;
+            public ulong topologyHash;
+        }
+
+        public RoadNetworkSnapshot CaptureSnapshot()
+        {
+            ulong hash = 14695981039346656037UL;
+            for (int i = 0; i < Lanes.Length; i++)
+            {
+                hash ^= (ulong)Lanes[i].Id;
+                hash *= 1099511628211UL;
+                hash ^= (ulong)Mathf.RoundToInt(Lanes[i].Length * 100f);
+                hash *= 1099511628211UL;
+            }
+            for (int i = 0; i < Next.Length; i++)
+            {
+                if (Next[i] != null)
+                {
+                    for (int k = 0; k < Next[i].Length; k++)
+                    {
+                        hash ^= (ulong)Next[i][k];
+                        hash *= 1099511628211UL;
+                    }
+                }
+            }
+            return new RoadNetworkSnapshot
+            {
+                roadCount = roadCount,
+                laneCount = Lanes.Length,
+                connectionCount = connectionCount,
+                topologyHash = hash
+            };
+        }
+
+        [System.NonSerialized] public Lane[] Lanes = System.Array.Empty<Lane>();
+        [System.NonSerialized] public int[][] Next = System.Array.Empty<int[]>();
 
         [Header("Stats")]
         public int roadCount;
@@ -126,10 +166,14 @@ namespace Nyc.Gameplay.Traffic
                 if (road.Dir == 0) lateral = dir > 0 ? -lateral : lateral;
 
                 Vector2[] offsetPts = OffsetPolyline(ordered, lateral);
+                Vector3[] pts3D = new Vector3[offsetPts.Length];
+                for (int i3d = 0; i3d < offsetPts.Length; i3d++) pts3D[i3d] = new Vector3(offsetPts[i3d].x, 0f, offsetPts[i3d].y);
+
                 lanes.Add(new Lane
                 {
                     Id = lanes.Count,
                     Points = offsetPts,
+                    Points3D = pts3D,
                     Cum = Cumulative(offsetPts),
                     Length = PolylineLength(offsetPts),
                     HalfWidth = Mathf.Max(2.5f, road.Width * 0.5f / perDir),

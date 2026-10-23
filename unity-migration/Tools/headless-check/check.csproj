@@ -5,6 +5,7 @@
     <Nullable>disable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <NoWarn>CS0169;CS0414;CS0649;CS1998;CS0108;CS0067</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
@@ -40,6 +41,7 @@
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/RoadNetwork.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficJobs.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/VehicleMeshFactory.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/Traffic/NycVehicleBRGBackend.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficSystem.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Traffic/TrafficRenderer.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/Pedestrians/PedestrianCrowd.cs" />
@@ -49,6 +51,7 @@
     <Compile Include="../../Assets/Scripts/UI/HUDController.cs" />
     <Compile Include="../../Assets/Scripts/UI/TouchControlsController.cs" />
     <Compile Include="../../Assets/Scripts/Core/NycMainBootstrapper.cs" />
+    <Compile Include="../../Assets/Scripts/Networking/NycRemoteSession.cs" />
     <Compile Include="../../Assets/Scripts/Rendering/NycShaderIDs.cs" />
     <Compile Include="../../Assets/Scripts/Rendering/TimeOfDayPreset.cs" />
     <Compile Include="../../Assets/Scripts/Rendering/LightingSystem.cs" />
@@ -65,5 +68,6 @@
     <Compile Include="../../Assets/Editor/NycPresetCreator.cs" />
     <Compile Include="../../Assets/Editor/NycGeoDataImporter.cs" />
     <Compile Include="../../Assets/Editor/NycVolumeProfileCreator.cs" />
+    <Compile Include="../../Assets/Editor/NycRenderPipelineSetup.cs" />
   </ItemGroup>
 </Project>

@@ -38,8 +38,8 @@ namespace Nyc.UI
         void Awake()
         {
             if (!uiDocument) uiDocument = GetComponent<UIDocument>();
-            if (!inputReader) inputReader = FindFirstObjectByType<PlayerInputReader>();
-            if (!controllerManager) controllerManager = FindFirstObjectByType<ThirdPersonControllerManager>();
+            if (!inputReader) inputReader = FindAnyObjectByType<PlayerInputReader>();
+            if (!controllerManager) controllerManager = FindAnyObjectByType<ThirdPersonControllerManager>();
         }
 
         void OnEnable()

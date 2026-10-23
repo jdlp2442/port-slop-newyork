@@ -82,7 +82,7 @@ namespace Nyc.Gameplay.Pedestrians
             if (_ready) return;
             if (!material) material = new Material(Shader.Find("Nyc/Pedestrian"));
             if (!viewCamera) viewCamera = Camera.main;
-            if (!controllers) controllers = FindFirstObjectByType<ThirdPersonControllerManager>();
+            if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
 
             _mesh = BuildWalkerMesh();
             _walkers = new Walker[maxWalkers];

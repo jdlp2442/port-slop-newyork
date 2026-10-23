@@ -85,12 +85,6 @@ namespace Nyc.Rendering.Passes
         static readonly int BloomBlurVRT = Shader.PropertyToID("_BloomBlurVRT");
         static readonly int BloomCompositeRT = Shader.PropertyToID("_BloomCompositeRT");
 
-        static readonly int ThresholdParamsId = Shader.PropertyToID("_ThresholdParams");
-        static readonly int GradingParamsId = Shader.PropertyToID("_GradingParams");
-        static readonly int ColorBalanceId = Shader.PropertyToID("_ColorBalance");
-        static readonly int BlurOffsetId = Shader.PropertyToID("_BlurOffset");
-        static readonly int BloomTexId = Shader.PropertyToID("_BloomTex");
-
         public NycBloomPass(NycBloomFeature.Settings settings, Material material)
         {
             _settings = settings;
@@ -107,7 +101,7 @@ namespace Nyc.Rendering.Passes
             float contrast = _settings.contrast;
             float saturation = _settings.saturation;
 
-            var pp = FindFirstObjectByType<PostProcessingController>();
+            var pp = FindAnyObjectByType<PostProcessingController>();
             if (pp != null)
             {
                 threshold = pp.currentLook.bloomThreshold;
@@ -118,12 +112,21 @@ namespace Nyc.Rendering.Passes
                 saturation = pp.currentLook.saturation;
             }
 
-            _material.SetVector(ThresholdParamsId, new Vector4(threshold, _settings.softKnee, _settings.peakLimit, intensity));
-            _material.SetVector(GradingParamsId, new Vector4(exposure, contrast, saturation, _settings.vignette));
-            _material.SetVector(ColorBalanceId, balance);
+            _material.SetVector(NycShaderIDs.ThresholdParams, new Vector4(threshold, _settings.softKnee, _settings.peakLimit, intensity));
+            _material.SetVector(NycShaderIDs.GradingParams, new Vector4(exposure, contrast, saturation, _settings.vignette));
+            _material.SetVector(NycShaderIDs.ColorBalance, balance);
         }
 
 #if UNITY_6000_0_OR_NEWER
+        private sealed class RasterPassData
+        {
+            public TextureHandle source;
+            public TextureHandle bloomTex;
+            public Material material;
+            public Vector4 blurOffset;
+            public int passIndex;
+        }
+
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
             if (_material == null) return;
@@ -153,25 +156,78 @@ namespace Nyc.Rendering.Passes
             desc.name = "_BloomComposite";
             TextureHandle composite = renderGraph.CreateTexture(desc);
 
-            // 1. Prefilter
-            var p0 = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, prefilter, _material, 0);
-            renderGraph.AddBlitPass(p0, "BloomPrefilter");
+            // 1. Prefilter Pass (Pass 0: extract bright highlights with soft knee and peak limit)
+            using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomPrefilter", out var passData))
+            {
+                passData.source = resourcesData.cameraColor;
+                passData.material = _material;
+                passData.passIndex = 0;
 
-            // 2. Blur H
-            _material.SetVector(BlurOffsetId, new Vector4(1.0f / downDesc.width, 0f, 0f, 0f));
-            var p1 = new RenderGraphUtils.BlitMaterialParameters(prefilter, blurH, _material, 1);
-            renderGraph.AddBlitPass(p1, "BloomBlurH");
+                builder.UseTexture(passData.source, AccessFlags.Read);
+                builder.SetRenderAttachment(prefilter, 0, AccessFlags.Write);
 
-            // 3. Blur V
-            _material.SetVector(BlurOffsetId, new Vector4(0f, 1.0f / downDesc.height, 0f, 0f));
-            var p2 = new RenderGraphUtils.BlitMaterialParameters(blurH, blurV, _material, 1);
-            renderGraph.AddBlitPass(p2, "BloomBlurV");
+                builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
+                {
+                    Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, data.passIndex);
+                });
+            }
 
-            // 4. Composite
-            _material.SetTexture(BloomTexId, blurV);
-            var p3 = new RenderGraphUtils.BlitMaterialParameters(resourcesData.cameraColor, composite, _material, 2);
-            renderGraph.AddBlitPass(p3, "BloomComposite");
+            // 2. Horizontal Blur Pass (Pass 1)
+            using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomBlurH", out var passData))
+            {
+                passData.source = prefilter;
+                passData.material = _material;
+                passData.blurOffset = new Vector4(1.0f / downDesc.width, 0f, 0f, 0f);
+                passData.passIndex = 1;
 
+                builder.UseTexture(passData.source, AccessFlags.Read);
+                builder.SetRenderAttachment(blurH, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
+                {
+                    data.material.SetVector(NycShaderIDs.BlurOffset, data.blurOffset);
+                    Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, data.passIndex);
+                });
+            }
+
+            // 3. Vertical Blur Pass (Pass 1)
+            using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomBlurV", out var passData))
+            {
+                passData.source = blurH;
+                passData.material = _material;
+                passData.blurOffset = new Vector4(0f, 1.0f / downDesc.height, 0f, 0f);
+                passData.passIndex = 1;
+
+                builder.UseTexture(passData.source, AccessFlags.Read);
+                builder.SetRenderAttachment(blurV, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
+                {
+                    data.material.SetVector(NycShaderIDs.BlurOffset, data.blurOffset);
+                    Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, data.passIndex);
+                });
+            }
+
+            // 4. Composite & Color Grading Pass (Pass 2)
+            using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomComposite", out var passData))
+            {
+                passData.source = resourcesData.cameraColor;
+                passData.bloomTex = blurV;
+                passData.material = _material;
+                passData.passIndex = 2;
+
+                builder.UseTexture(passData.source, AccessFlags.Read);
+                builder.UseTexture(passData.bloomTex, AccessFlags.Read);
+                builder.SetRenderAttachment(composite, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
+                {
+                    data.material.SetTexture(NycShaderIDs.BloomTexture, data.bloomTex);
+                    Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, data.passIndex);
+                });
+            }
+
+            // 5. Restore back to camera color
             renderGraph.AddBlitPass(composite, resourcesData.cameraColor, Vector2.one, Vector2.zero, passName: "BloomRestore");
         }
 #else
@@ -200,15 +256,15 @@ namespace Nyc.Rendering.Passes
             cmd.Blit(source, BloomPrefilterRT, _material, 0);
 
             // 2. Horizontal Blur
-            _material.SetVector(BlurOffsetId, new Vector4(1.0f / downW, 0f, 0f, 0f));
+            _material.SetVector(NycShaderIDs.BlurOffset, new Vector4(1.0f / downW, 0f, 0f, 0f));
             cmd.Blit(BloomPrefilterRT, BloomBlurHRT, _material, 1);
 
             // 3. Vertical Blur
-            _material.SetVector(BlurOffsetId, new Vector4(0f, 1.0f / downH, 0f, 0f));
+            _material.SetVector(NycShaderIDs.BlurOffset, new Vector4(0f, 1.0f / downH, 0f, 0f));
             cmd.Blit(BloomBlurHRT, BloomBlurVRT, _material, 1);
 
             // 4. Composite & Grading
-            cmd.SetGlobalTexture(BloomTexId, BloomBlurVRT);
+            cmd.SetGlobalTexture(NycShaderIDs.BloomTexture, BloomBlurVRT);
             cmd.Blit(source, BloomCompositeRT, _material, 2);
             cmd.Blit(BloomCompositeRT, source);
 
@@ -222,10 +278,10 @@ namespace Nyc.Rendering.Passes
         }
 #endif
 
-        static T FindFirstObjectByType<T>() where T : UnityEngine.Object
+        static T FindAnyObjectByType<T>() where T : UnityEngine.Object
         {
             #if UNITY_2023_1_OR_NEWER
-            return UnityEngine.Object.FindFirstObjectByType<T>();
+            return UnityEngine.Object.FindAnyObjectByType<T>();
             #else
             return UnityEngine.Object.FindObjectOfType<T>();
             #endif

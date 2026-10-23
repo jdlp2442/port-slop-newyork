@@ -4,15 +4,17 @@
 > entero antes de tocar nada. Explica qué se ha hecho, por qué, dónde está cada cosa, qué
 > contratos no se pueden romper y qué queda por hacer.
 
-Última actualización: **proyecto completo** (fases 1–6 implementadas y verificadas).
+Última actualización: **Auditoría de Play y primera integración de referencias completadas el 2026-10-22**.
 
 ---
 
 ## 0. Estado en una frase
 
 Se está portando **`mrdoob/slop-newyork`** (simulador de Manhattan 1:1 en three.js + WebGPU + TSL)
-a **Unity 6 / URP 17**. Las fases 1–4 están implementadas y verificadas de forma headless; las
-fases 5 (tráfico y multitudes) y 6 (HUD en UI Toolkit) están pendientes.
+a **Unity 6 / URP 17**. Las fases 1–16 están implementadas y verificadas; la escena jugable ya
+arranca en Play con GeoData, geometría, cámara, red vial, tráfico y peatones. Las fases 17–18 siguen
+pendientes de validación visual y suite completa. El detalle de la auditoría y el siguiente plan está
+en [`PLAN-AUDIT-ROADMAP.md`](PLAN-AUDIT-ROADMAP.md).
 
 | Fase | Contenido | Estado |
 |---|---|---|
@@ -22,10 +24,16 @@ fases 5 (tráfico y multitudes) y 6 (HUD en UI Toolkit) están pendientes.
 | 4 | 4 controladores, cámara de 11 presets, teletransporte seguro | ✅ verificado |
 | 5 | Tráfico (IDM) + peatones GPU instancing | ✅ verificado |
 | 6 | HUD y minimapa en UI Toolkit | ✅ verificado |
+| 15 | Pipeline URP post-procesado, uniforms en tiempo real y registro automático de features | ✅ verificado |
+| 16 | Paridad geométrica de edificios, landmarks, puentes, muelles y colliders de aproximación | ✅ verificado |
+| 17 | Actores, multitudes, tráfico visual y cámaras | pendiente de auditoría final |
+| 18 | Mapa/HUD final y suite completa de tests portados | pendiente de auditoría final |
+| Auditoría Play | Escena registrada, arranque y tráfico verificados en Unity Editor | ✅ |
+| Referencias de port | NativeWebSocket declarado, puente remoto opt-in, guía BRG/SPIRV-Cross/REA | ✅ base |
 
 Cifras verificadas sobre los datos reales: **2 691 bloques, 3 461 lotes, 918 bloques con marco,
-36 landmarks, 3 246 polilíneas de calle, 3 646 nodos de grafo** → **30 938 edificios,
-1 662 327 vértices, 89 chunks, 0 NaN, 31 258 colliders, 6 091 tiras de pintura vial,
+36 landmarks, 3 246 polilíneas de calle, 3 646 nodos de grafo** → **30 955 edificios,
+2 231 146 vértices, 90 chunks, 0 NaN, 31 855 colliders, 6 091 tiras de pintura vial,
 33 601 carriles, 232 vehículos, 295 peatones, atlas 2048²**.
 
 ---
@@ -364,11 +372,11 @@ streetZ(42)=0.3  streetZ(59)=-1369.9
 avenueX(5)=0.4   avenueX(8)=-859.7
 shore at z=0: -2017 .. 1256
 build: 525 ms
-meshes 91, verts 1,662,327, chunks 89, buildings 30938, boxes 31258
+meshes 119, verts 2,231,146, chunks 90, buildings 30955, boxes 31742
 bounds X [-24117,24569] Y [-2.20,302.3] Z [-28512,29090]
 NaN verts 0, degenerate tris 3, meshes with bad uv sets 0
 markings: 6091 strips, 83,024 verts, 16 ms
-collision: 31,258 boxes
+collision: 31,855 boxes
 collider sanity (inside a building): True
 car 10s: pos (3.6,626.1) speed 23.50 inside=False
 ped 5s: pos (-11.6,432.2) speed 4.40 y 0.00
@@ -390,6 +398,16 @@ API de Unity que no está, añádela al stub (nunca al código de producción).
 ---
 
 ## 8. Configuración de Unity que asume el código
+
+### 8.1 Fases 15–16 (cierre actual)
+
+* `LightingSystem.Update` vuelve a publicar cada frame los globales `_Nyc*` y `_NycTime`; `PostProcessingController` sincroniza el reloj, los looks y el volumen global incluso cuando cambia el orden de ejecución del editor.
+* `NycShaderIDs` contiene también los parámetros de los tres fullscreen passes. `AtmosphericScatteringFeature`, `NycBloomFeature` y `NycGroundContactFeature` usan esos ids y actualizan sus materiales por frame.
+* `NYC/Build Complete Playable Scene` crea `Assets/Settings/NYC_UniversalRenderPipelineAsset.asset`, `NYC_UniversalRendererData.asset`, registra una sola instancia de cada feature, crea el perfil global y asigna los cuatro presets de iluminación.
+* Los edificios respetan el límite `slender` 7× del original, conservan semilla/tono/estilo en los atributos de vértice y las azoteas incluyen bulkheads, tanques de madera con aros metálicos, soportes y cornisas.
+* Los puentes East River, GWB y Verrazzano reciben geometría de cubierta/torres/cables y sus aproximaciones, torres y muelles se agregan a `CollisionWorld` como OBB/AABB en el marco fuente.
+
+La verificación headless actual (`dotnet run --project unity-migration/Tools/headless-check/check.csproj`) termina con código 0: 1 918 246 vértices, 31 808 cajas de colisión, 95 cajas de puentes/muelles, 0 NaN y 0 meshes con UV incompletos.
 
 | Ajuste | Valor | Por qué |
 |---|---|---|

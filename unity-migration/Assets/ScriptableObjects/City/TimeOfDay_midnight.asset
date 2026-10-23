@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b6d2f12bee692c4f882b8333e5e4c96, type: 3}
+  m_Name: TimeOfDay_midnight
+  m_EditorClassIdentifier: Assembly-CSharp::Nyc.Rendering.TimeOfDayPreset
+  id: midnight
+  displayName: "Manhattan Night \xB7 23:00"
+  hour: 23
+  sunDir: {x: 0.4202522, y: 0.68040836, z: -0.60036033}
+  sunColor: {r: 0.54901963, g: 0.6901961, b: 0.9098039, a: 1}
+  sunIntensity: 1.45
+  hemiSky: {r: 0.14901961, g: 0.22745098, b: 0.38431373, a: 1}
+  hemiGround: {r: 0.21960784, g: 0.18039216, b: 0.21176471, a: 1}
+  hemiIntensity: 0.72
+  skyTop: {r: 0.023529412, g: 0.047058824, b: 0.101960786, a: 1}
+  skyHorizon: {r: 0.09411765, g: 0.14901961, b: 0.2509804, a: 1}
+  turbidity: 4
+  rayleigh: 1.5
+  mieCoefficient: 0.004
+  mieDirectionalG: 0.8
+  cloudCoverage: 0.22
+  cloudDensity: 0.25
+  skyExposure: 0.022
+  nightFactor: 0.86
+  fogColor: {r: 0.047058824, g: 0.078431375, b: 0.14117648, a: 1}
+  fogDensity: 0.00036
+  envIntensity: 0.3
+  interiorGlow: 1.55
+  roadWetness: 0.62
+  canyonBounce: 0.18
+  exposure: 1.04
+  contrast: 1.08
+  saturation: 1.06
+  whiteBalance: {x: 0.985, y: 1, z: 1.035}
+  bloom: 0.3
+  bloomThreshold: 1

@@ -73,14 +73,13 @@ namespace Nyc.Rendering.Passes
         RenderTargetIdentifier _tempRT;
         const string ProfilerTag = "NycGroundContactAO";
         static readonly int TempRTId = Shader.PropertyToID("_TempContactAORT");
-        static readonly int AOParamsId = Shader.PropertyToID("_AOParams");
-
         public NycGroundContactPass(NycGroundContactFeature.Settings settings, Material material)
         {
             _settings = settings;
             _material = material;
             renderPassEvent = settings.passEvent;
             _tempRT = new RenderTargetIdentifier(TempRTId);
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
 #if UNITY_6000_0_OR_NEWER
@@ -93,7 +92,7 @@ namespace Nyc.Rendering.Passes
 
             if (cameraData.isSceneViewCamera || !resourcesData.cameraColor.IsValid()) return;
 
-            _material.SetVector(AOParamsId, new Vector4(_settings.intensity, _settings.sampleRadius, _settings.depthBias, _settings.maxDistance));
+            _material.SetVector(NycShaderIDs.AoParams, new Vector4(_settings.intensity, _settings.sampleRadius, _settings.depthBias, _settings.maxDistance));
 
             TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
             desc.name = "_GroundContactAOTemp";
@@ -117,7 +116,7 @@ namespace Nyc.Rendering.Passes
 
             cmd.GetTemporaryRT(TempRTId, desc.width, desc.height, 0, FilterMode.Bilinear);
 
-            _material.SetVector(AOParamsId, new Vector4(_settings.intensity, _settings.sampleRadius, _settings.depthBias, _settings.maxDistance));
+            _material.SetVector(NycShaderIDs.AoParams, new Vector4(_settings.intensity, _settings.sampleRadius, _settings.depthBias, _settings.maxDistance));
 
             RenderTargetIdentifier source = "_CameraColorTexture";
             cmd.Blit(source, _tempRT, _material, 0);

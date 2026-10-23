@@ -74,10 +74,10 @@ namespace Nyc.UI
 
         void Awake()
         {
-            if (!controllers) controllers = FindFirstObjectByType<ThirdPersonControllerManager>();
-            if (!cameras) cameras = FindFirstObjectByType<CameraManager>();
-            if (!lighting) lighting = FindFirstObjectByType<LightingSystem>();
-            if (!mapSystem) mapSystem = FindFirstObjectByType<NycMapSystem>();
+            if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
+            if (!cameras) cameras = FindAnyObjectByType<CameraManager>();
+            if (!lighting) lighting = FindAnyObjectByType<LightingSystem>();
+            if (!mapSystem) mapSystem = FindAnyObjectByType<NycMapSystem>();
         }
 
         void OnEnable()

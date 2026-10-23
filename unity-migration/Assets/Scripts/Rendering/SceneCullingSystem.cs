@@ -53,7 +53,7 @@ namespace Nyc.Rendering
         [Tooltip("Minimum cull distance for small street details/props (m)")]
         public float minPropCullDistance = 350.0f;
         [Tooltip("Maximum cull distance for large building blocks (m)")]
-        public float maxBuildingCullDistance = 2200.0f;
+        public float maxBuildingCullDistance = 30000.0f;
         [Tooltip("Enable view frustum plane intersection testing")]
         public bool enableFrustumCulling = true;
         [Tooltip("Enable distance-to-camera falloff culling")]
@@ -134,11 +134,15 @@ namespace Nyc.Rendering
         public void RegisterRenderer(Renderer r, float cullDist = -1f)
         {
             if (r == null) return;
+            string name = r.gameObject.name;
+            if (name == "Ground" || name == "Roads" || name.Contains("ManhattanGround") || name.Contains("ManhattanRoads")) return;
             if (cullDist < 0f) cullDist = maxBuildingCullDistance;
 
-            Vector3 pos = r.transform.position;
+            Vector3 pos = r.bounds.center;
             CullingChunk chunk = GetOrCreateChunk(pos.x, pos.z, cullDist);
             chunk.Renderers.Add(r);
+            chunk.Bounds.Encapsulate(r.bounds);
+            chunk.Radius = Mathf.Max(chunk.Radius, r.bounds.extents.magnitude);
             totalRenderers++;
         }
 

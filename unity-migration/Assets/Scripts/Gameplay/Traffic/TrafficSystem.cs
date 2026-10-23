@@ -57,6 +57,148 @@ namespace Nyc.Gameplay.Traffic
             public int Batch;
         }
 
+        public struct LaneQueryPoint
+        {
+            public float u;
+            public float v;
+        }
+
+        public struct PlayerQuerySnapshot
+        {
+            public float x, y, z;
+            public float vx, vz;
+            public string mode;
+
+            public static PlayerQuerySnapshot FromEntity(Vector3 pos, float heading, float speed, string mode)
+            {
+                if (mode == "helicopter") return default;
+                return new PlayerQuerySnapshot
+                {
+                    x = pos.x,
+                    y = pos.y,
+                    z = pos.z,
+                    vx = Mathf.Sin(heading) * speed,
+                    vz = Mathf.Cos(heading) * speed,
+                    mode = mode
+                };
+            }
+        }
+
+        public static bool TryPlayerInLane(Vector3[] P, float[] cum, PlayerQuerySnapshot pl, out LaneQueryPoint result)
+        {
+            result = default;
+            if (pl.mode == "helicopter" || P == null || cum == null) return false;
+            int n = P.Length;
+            for (int i = 0; i < n - 1; i++)
+            {
+                float ax = P[i].x, az = P[i].z;
+                if (P[i].y < -0.5f) continue; // underground lanes are not occupied by surface players
+                float sx = P[i + 1].x - ax;
+                float sz = P[i + 1].z - az;
+                float horizontalLengthSq = sx * sx + sz * sz;
+                if (horizontalLengthSq == 0f) continue;
+                float L = cum[i + 1] - cum[i];
+                float t = ((pl.x - ax) * sx + (pl.z - az) * sz) / horizontalLengthSq;
+                if (t < 0f || t > 1f) continue;
+                float y = P[i].y + (P[i + 1].y - P[i].y) * t;
+                if (Mathf.Abs(pl.y - y) >= 2.6f) continue;
+                if (Mathf.Abs((pl.z - az) * sx - (pl.x - ax) * sz) / Mathf.Sqrt(horizontalLengthSq) < 2.0f)
+                {
+                    result = new LaneQueryPoint
+                    {
+                        u = cum[i] + t * L,
+                        v = Mathf.Max(0f, ((pl.vx * sx + pl.vz * sz) / horizontalLengthSq) * L)
+                    };
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [System.Serializable]
+        public struct TrafficSnapshot
+        {
+            public int frame;
+            public float time;
+            public int activeAgents;
+            public int stoppedAgents;
+            public float averageSpeed;
+            public float maxSpeed;
+            public ulong stateHash;
+            public AgentSnapshot[] agents;
+        }
+
+        [System.Serializable]
+        public struct AgentSnapshot
+        {
+            public int index;
+            public int lane;
+            public float s;
+            public float speed;
+            public float accel;
+            public Vector2 position;
+            public float heading;
+            public int batch;
+        }
+
+        public TrafficSnapshot CaptureSnapshot(int frame = 0)
+        {
+            int active = 0;
+            int stopped = 0;
+            float sumSpeed = 0f;
+            float maxSpd = 0f;
+            ulong hash = 14695981039346656037UL;
+
+            var list = new List<AgentSnapshot>(_agents.Length);
+            for (int i = 0; i < _agents.Length; i++)
+            {
+                if (!_agents[i].Active) continue;
+                active++;
+                float spd = _agents[i].Speed;
+                sumSpeed += spd;
+                if (spd < 0.5f) stopped++;
+                if (spd > maxSpd) maxSpd = spd;
+
+                hash ^= (ulong)i; hash *= 1099511628211UL;
+                hash ^= (ulong)_agents[i].Lane; hash *= 1099511628211UL;
+                hash ^= (ulong)Mathf.RoundToInt(_agents[i].S * 10f); hash *= 1099511628211UL;
+                hash ^= (ulong)Mathf.RoundToInt(spd * 100f); hash *= 1099511628211UL;
+
+                list.Add(new AgentSnapshot
+                {
+                    index = i,
+                    lane = _agents[i].Lane,
+                    s = _agents[i].S,
+                    speed = _agents[i].Speed,
+                    accel = _agents[i].Accel,
+                    position = _agents[i].Position,
+                    heading = _agents[i].Heading,
+                    batch = _agents[i].Batch
+                });
+            }
+
+            return new TrafficSnapshot
+            {
+                frame = frame,
+                time = _time,
+                activeAgents = active,
+                stoppedAgents = stopped,
+                averageSpeed = active > 0 ? sumSpeed / active : 0f,
+                maxSpeed = maxSpd,
+                stateHash = hash,
+                agents = list.ToArray()
+            };
+        }
+
+        public void ResetDeterministic(int seed = 10019)
+        {
+            _rng = new System.Random(seed);
+            _time = 0f;
+            _spawnTimer = 0f;
+            _spawnFocus = new Vector2(float.MaxValue, float.MaxValue);
+            Build();
+        }
+
         struct Driver
         {
             public float a, b, T, s0, aLat;
@@ -108,9 +250,9 @@ namespace Nyc.Gameplay.Traffic
 
         public void Build()
         {
-            if (!network) network = FindFirstObjectByType<RoadNetwork>();
-            if (!renderer) renderer = FindFirstObjectByType<TrafficRenderer>();
-            if (!controllers) controllers = FindFirstObjectByType<ThirdPersonControllerManager>();
+            if (!network) network = FindAnyObjectByType<RoadNetwork>();
+            if (!renderer) renderer = FindAnyObjectByType<TrafficRenderer>();
+            if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
             if (!viewCamera) viewCamera = Camera.main;
 
             if (network == null || network.Lanes.Length == 0)
