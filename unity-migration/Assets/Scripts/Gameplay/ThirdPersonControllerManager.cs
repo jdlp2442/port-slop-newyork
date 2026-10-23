@@ -39,6 +39,8 @@ namespace Nyc.Gameplay
         ControllerContext _ctx;
         TravelController[] _all;
         bool _ready;
+        float _simulationAccumulator;
+        const float SimulationStep = 1f / 60f;
 
         // ------------------------------------------------------------------ lifecycle
 
@@ -71,7 +73,21 @@ namespace Nyc.Gameplay
 
         void Update()
         {
-            if (_ready) Tick(Time.deltaTime);
+            if (!_ready) return;
+            _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
+            int steps = 0;
+            while (_simulationAccumulator >= SimulationStep && steps++ < 4)
+            {
+                Tick(SimulationStep);
+                _simulationAccumulator -= SimulationStep;
+            }
+            if (steps == 4) _simulationAccumulator = 0f;
+
+            // Render between fixed states so pedestrians and vehicles do not stair-step when
+            // the render frame rate is not an exact multiple of the simulation rate.
+            float alpha = _simulationAccumulator / SimulationStep;
+            if (_all != null)
+                for (int i = 0; i < _all.Length; i++) if (_all[i] != null) _all[i].InterpolateTransform(alpha);
         }
 
         // ------------------------------------------------------------------ tick
@@ -79,6 +95,9 @@ namespace Nyc.Gameplay
         public void Tick(float dt)
         {
             _ctx.Elapsed += dt;
+
+            if (_all != null)
+                for (int i = 0; i < _all.Length; i++) if (_all[i] != null) _all[i].BeginSimulationStep();
 
             if (ActiveMode != TravelMode.Person && idlePedestrianWalks) TickIdlePedestrian(dt);
 

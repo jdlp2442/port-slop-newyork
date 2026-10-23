@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "source": "js/traffic.js",
+  "coordinateFrame": "x,y,-z",
+  "seed": 10019,
+  "cases": [
+    { "id": "surface_lane", "mode": "car", "laneHeight": 0.0, "playerHeight": 0.22, "lateral": 0.0, "expect": "occupy" },
+    { "id": "viaduct_below", "mode": "car", "laneHeight": 7.6, "playerHeight": 0.0, "lateral": 0.0, "expect": "ignore" },
+    { "id": "underground_surface_query", "mode": "car", "laneHeight": -4.5, "playerHeight": -4.5, "lateral": 0.0, "expect": "ignore" },
+    { "id": "helicopter_surface_query", "mode": "helicopter", "laneHeight": 0.0, "playerHeight": 40.0, "lateral": 0.0, "expect": "ignore" },
+    { "id": "lane_edge", "mode": "car", "laneHeight": 0.0, "playerHeight": 0.0, "lateral": 2.1, "expect": "ignore" },
+    { "id": "merge_claim", "outgoingLane": 42, "claimOrder": [3, 7, 11], "winner": 3, "expect": "single_claim" }
+  ]
+}

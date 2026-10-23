@@ -58,6 +58,11 @@ namespace Nyc.Gameplay
         public float Heading;
         public float Speed;
 
+        Vector2 _previousPosition;
+        float _previousHeight;
+        float _previousHeading;
+        bool _hasPreviousState;
+
         [Header("Camera framing")]
         public float ChaseDistance = 4.3f;
         public float ChaseHeight = 1.95f;
@@ -74,8 +79,21 @@ namespace Nyc.Gameplay
             Position = xz;
             Heading = heading;
             Height = height;
+            _previousPosition = xz;
+            _previousHeading = heading;
+            _previousHeight = height;
+            _hasPreviousState = true;
             ResetMotion();
             SyncTransform();
+        }
+
+        /// <summary>Captures the last rendered state before a fixed simulation step.</summary>
+        public void BeginSimulationStep()
+        {
+            _previousPosition = Position;
+            _previousHeight = Height;
+            _previousHeading = Heading;
+            _hasPreviousState = true;
         }
 
         /// <summary>Writes the source-frame state into the Unity transform.</summary>
@@ -84,6 +102,19 @@ namespace Nyc.Gameplay
             transform.SetPositionAndRotation(
                 CityFrame.ToUnity(Position.x, Height, Position.y),
                 CityFrame.HeadingToRotation(Heading));
+        }
+
+        /// <summary>Interpolates the visual transform between fixed simulation states.</summary>
+        public void InterpolateTransform(float alpha)
+        {
+            if (!_hasPreviousState) { SyncTransform(); return; }
+            alpha = Mathf.Clamp01(alpha);
+            Vector2 p = Vector2.Lerp(_previousPosition, Position, alpha);
+            float h = Mathf.Lerp(_previousHeight, Height, alpha);
+            // Headings change slowly at the fixed step; linear interpolation avoids a wrap
+            // dependency in the headless Unity stubs while preserving smooth visual motion.
+            float heading = Mathf.Lerp(_previousHeading, Heading, alpha);
+            transform.SetPositionAndRotation(CityFrame.ToUnity(p.x, h, p.y), CityFrame.HeadingToRotation(heading));
         }
     }
 }

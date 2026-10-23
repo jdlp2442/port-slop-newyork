@@ -18,7 +18,7 @@ namespace Nyc.Gameplay.Traffic
     /// </summary>
     public static class VehicleMeshFactory
     {
-        public const int Body = 0, Glass = 1, Headlight = 2, Taillight = 3, Tyre = 4;
+        public const int Body = 0, Glass = 1, Headlight = 2, Taillight = 3, Tyre = 4, BusBlueStripe = 5, BusCyanRibbon = 6;
 
         public static Mesh CreateCar(bool suv = false, bool taxi = false)
         {
@@ -271,6 +271,15 @@ namespace Nyc.Gameplay.Traffic
             // 2. Glass: Front Curved Windshield & Continuous Side Passenger Windows
             b.Box(new Vector3(0f, 2.05f, noseZ - 0.02f), new Vector3(w * 0.94f, 1.15f, 0.10f), Glass);
             b.Box(new Vector3(0f, 2.22f, 0.25f), new Vector3(w + 0.02f, 0.85f, len * 0.84f), Glass);
+
+            // MTA livery: the web actor uses a pearl-white shell with a deep-blue belt and
+            // cyan ribbon below the passenger windows. Keep the stripes as separate mesh parts
+            // so the instanced shader can shade them without additional draw calls.
+            float sideX = w * 0.5f + 0.015f;
+            b.Box(new Vector3(-sideX, 1.46f, 0.20f), new Vector3(0.035f, 0.34f, len * 0.82f), BusBlueStripe);
+            b.Box(new Vector3(sideX, 1.46f, 0.20f), new Vector3(0.035f, 0.34f, len * 0.82f), BusBlueStripe);
+            b.Box(new Vector3(-sideX, 1.16f, 0.20f), new Vector3(0.038f, 0.10f, len * 0.82f), BusCyanRibbon);
+            b.Box(new Vector3(sideX, 1.16f, 0.20f), new Vector3(0.038f, 0.10f, len * 0.82f), BusCyanRibbon);
 
             // 3. Destination Sign Box ("M15 SELECT BUS")
             b.Box(new Vector3(0f, 2.88f, noseZ - 0.04f), new Vector3(1.55f, 0.28f, 0.14f), Glass);

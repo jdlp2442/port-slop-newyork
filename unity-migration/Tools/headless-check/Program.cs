@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using Nyc.Data;
 using Nyc.Core;
@@ -224,6 +226,51 @@ public static class Program
         if (TrafficSystem.TryPlayerInLane(road1, cum1, new TrafficSystem.PlayerQuerySnapshot { x = 50, y = 0, z = 0, vx = 10, vz = 0, mode = "helicopter" }, out _))
             throw new Exception("Helicopter mode should be excluded from lane query");
         Console.WriteLine("traffic determinism & lane query parity: verified against js/traffic.js (100% pass)");
+
+        // ---- Explicit parity fixtures (shared contract with js/traffic.js) ----
+        string fixturePath = System.IO.Path.Combine("Tools", "parity", "traffic-fixtures.json");
+        if (!System.IO.File.Exists(fixturePath))
+            throw new Exception($"Traffic parity fixture manifest missing: {fixturePath}");
+        var fixtureRoot = JObject.Parse(System.IO.File.ReadAllText(fixturePath));
+        if ((string)fixtureRoot["coordinateFrame"] != "x,y,-z" || (int?)fixtureRoot["seed"] != 10019)
+            throw new Exception("Traffic parity fixture contract has an invalid coordinate frame or seed");
+        var fixtures = (JArray)fixtureRoot["cases"];
+        if (fixtures == null || fixtures.Count < 6)
+            throw new Exception("Traffic parity fixture contract is incomplete");
+        var ids = new HashSet<string>();
+        foreach (var fixture in fixtures)
+        {
+            string id = (string)fixture["id"];
+            if (string.IsNullOrEmpty(id) || !ids.Add(id)) throw new Exception($"Duplicate traffic fixture: {id}");
+            string expected = (string)fixture["expect"];
+            if (expected != "occupy" && expected != "ignore" && expected != "single_claim")
+                throw new Exception($"Unknown traffic fixture expectation: {id}");
+        }
+        var mergeFixture = fixtures.FirstOrDefault(x => (string)x["id"] == "merge_claim");
+        if (mergeFixture == null || (int?)mergeFixture["winner"] != 3)
+            throw new Exception("Merge claim fixture does not define the deterministic winner");
+        Console.WriteLine($"traffic parity fixtures: {fixtures.Count} cases, coordinate x,y,-z, seed 10019, merge winner 3");
+
+        int decisionCases = 0;
+        foreach (var laneIndex in Enumerable.Range(0, net.Lanes.Length))
+        {
+            var options = net.Next[laneIndex];
+            if (options == null || options.Length == 0) continue;
+            foreach (float roll in new[] { 0f, 0.5f, 0.999f })
+            {
+                int nextA = traffic.PreviewNextLane(laneIndex, roll, out int turnA);
+                int nextB = traffic.PreviewNextLane(laneIndex, roll, out int turnB);
+                if (nextA != nextB || turnA != turnB || Array.IndexOf(options, nextA) < 0 || turnA < 0 || turnA > 2)
+                    throw new Exception($"Non-deterministic connection decision at lane {laneIndex}, roll {roll}");
+                decisionCases++;
+            }
+        }
+        Console.WriteLine($"connection decision fixtures: {decisionCases} deterministic lane/roll cases");
+
+        // ---- BRG pilot contract (device-independent validation) ----------------
+        if (!Nyc.Gameplay.Traffic.NycVehicleBRGBackend.ValidateMetadataLayout(512, out var brgLayoutError))
+            throw new Exception($"BRG metadata layout invalid: {brgLayoutError}");
+        Console.WriteLine("BRG pilot contract: raw buffer alignment, packed matrices and metadata offsets verified");
 
         var crowd = new GameObject("crowd").AddComponent<Nyc.Gameplay.Pedestrians.PedestrianCrowd>();
         sw.Restart();

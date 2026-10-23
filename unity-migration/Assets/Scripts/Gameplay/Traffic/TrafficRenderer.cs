@@ -46,7 +46,8 @@ namespace Nyc.Gameplay.Traffic
         static readonly Color TaxiColor = new Color(1f, 0.745f, 0.078f);
         static readonly Color SedanColor = new Color(0.62f, 0.64f, 0.66f);
         static readonly Color SuvColor = new Color(0.16f, 0.17f, 0.19f);
-        static readonly Color BusColor = new Color(0.72f, 0.76f, 0.80f);
+        // MTA shell is pearl white; blue/cyan belt details are emitted by VehiclePaint parts 5/6.
+        static readonly Color BusColor = new Color(0.94f, 0.96f, 0.98f);
 
         void Awake() => EnsureInit();
 
@@ -93,23 +94,37 @@ namespace Nyc.Gameplay.Traffic
 
             if (useBRG && _meshes.Length > 0 && _materials.Length > 0)
             {
-                _brgBackends = new NycVehicleBRGBackend[_meshes.Length];
-                for (int i = 0; i < _meshes.Length; i++)
-                {
-                    var backend = new NycVehicleBRGBackend();
-                    if (backend.Initialize(_meshes[i], _materials[i], capacity))
-                    {
-                        _brgBackends[i] = backend;
-                    }
-                    else
-                    {
-                        backend.Dispose();
-                        _brgBackends[i] = null;
-                    }
-                }
+                InitializeBRGPilot();
             }
 
             _ready = true;
+        }
+
+        /// <summary>Rebuilds the single BRG pilot after changing the toggle in the Inspector.</summary>
+        public bool ReinitializeBRGPilot()
+        {
+            if (!_ready) EnsureInit();
+            DisposeBRGBackends();
+            if (!useBRG || _meshes == null || _materials == null) return false;
+            InitializeBRGPilot();
+            return _brgBackends != null && _brgBackends.Length > 0 && _brgBackends[0] != null && _brgBackends[0].IsAvailable;
+        }
+
+        void InitializeBRGPilot()
+        {
+            _brgBackends = new NycVehicleBRGBackend[_meshes.Length];
+            // Pilot only the first (taxi) batch. Every other batch remains on the proven
+            // RenderMeshInstanced path until BRG shader/culling parity is measured.
+            var backend = new NycVehicleBRGBackend();
+            if (backend.Initialize(_meshes[0], _materials[0], capacity)) _brgBackends[0] = backend;
+            else backend.Dispose();
+        }
+
+        void DisposeBRGBackends()
+        {
+            if (_brgBackends == null) return;
+            for (int i = 0; i < _brgBackends.Length; i++) _brgBackends[i]?.Dispose();
+            _brgBackends = null;
         }
 
         static Material MakeMaterial(string name, Color color, float smoothness, float metallic)
@@ -144,7 +159,7 @@ namespace Nyc.Gameplay.Traffic
                 };
                 job.Schedule(count, 64).Complete();
 
-                if (useBRG && _brgBackends != null && b < _brgBackends.Length && _brgBackends[b] != null && _brgBackends[b].IsAvailable)
+                if (useBRG && b == 0 && _brgBackends != null && b < _brgBackends.Length && _brgBackends[b] != null && _brgBackends[b].IsAvailable)
                 {
                     _brgBackends[b].UpdateInstances(_matrices[b], count);
                 }
@@ -163,18 +178,11 @@ namespace Nyc.Gameplay.Traffic
 
         void OnDestroy()
         {
-            if (_brgBackends != null)
-            {
-                for (int i = 0; i < _brgBackends.Length; i++)
-                {
-                    _brgBackends[i]?.Dispose();
-                    _brgBackends[i] = null;
-                }
-                _brgBackends = null;
-            }
+            DisposeBRGBackends();
 
-            if (!_ready) return;
-            for (int i = 0; i < _instances.Length; i++)
+            if (!_ready || _instances == null || _matrices == null) return;
+            int count = Mathf.Min(_instances.Length, _matrices.Length);
+            for (int i = 0; i < count; i++)
             {
                 if (_instances[i].IsCreated) _instances[i].Dispose();
                 if (_matrices[i].IsCreated) _matrices[i].Dispose();

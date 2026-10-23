@@ -1,0 +1,26 @@
+{
+  "project": "mrdoob/slop-newyork",
+  "unityProject": "unity-migration",
+  "coordinateFrame": {
+    "source": "x=east,z=south,y=up",
+    "unity": "(x,y,-z)",
+    "unitMeters": 1
+  },
+  "locations": ["empire", "centralpark", "owtc", "timessq"],
+  "hours": [12.0, 18.5, 21.0, 0.0],
+  "cameraPresets": ["chase", "low", "pov", "orbit", "street", "aerial", "helicopter"],
+  "seeds": {
+    "traffic": 10019,
+    "pedestrians": 20261022,
+    "treesCentralPark": 40019,
+    "treesParks": 50021,
+    "treesStreet": 60033
+  },
+  "acceptance": {
+    "maxNaNAgents": 0,
+    "maxConsoleErrors": 0,
+    "minBuildings": 30000,
+    "minTrafficAgents": 232,
+    "visualCaptureCount": 16
+  }
+}

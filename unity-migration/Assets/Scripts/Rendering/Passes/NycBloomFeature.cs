@@ -121,7 +121,6 @@ namespace Nyc.Rendering.Passes
         private sealed class RasterPassData
         {
             public TextureHandle source;
-            public TextureHandle bloomTex;
             public Material material;
             public Vector4 blurOffset;
             public int passIndex;
@@ -134,11 +133,11 @@ namespace Nyc.Rendering.Passes
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
-            if (cameraData.isSceneViewCamera || !resourcesData.cameraColor.IsValid()) return;
+            if (cameraData.isSceneViewCamera || !resourcesData.activeColorTexture.IsValid()) return;
 
             UpdateMaterialParams();
 
-            TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
+            TextureDesc desc = resourcesData.activeColorTexture.GetDescriptor(renderGraph);
             TextureDesc downDesc = desc;
             downDesc.width = Mathf.Max(desc.width / 2, 1);
             downDesc.height = Mathf.Max(desc.height / 2, 1);
@@ -159,7 +158,7 @@ namespace Nyc.Rendering.Passes
             // 1. Prefilter Pass (Pass 0: extract bright highlights with soft knee and peak limit)
             using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomPrefilter", out var passData))
             {
-                passData.source = resourcesData.cameraColor;
+                passData.source = resourcesData.activeColorTexture;
                 passData.material = _material;
                 passData.passIndex = 0;
 
@@ -201,6 +200,10 @@ namespace Nyc.Rendering.Passes
                 builder.UseTexture(passData.source, AccessFlags.Read);
                 builder.SetRenderAttachment(blurV, 0, AccessFlags.Write);
 
+                // Publish the transient blur result through Render Graph's tracked global
+                // resource mechanism. A TextureHandle cannot be passed to Material.SetTexture.
+                builder.SetGlobalTextureAfterPass(blurV, NycShaderIDs.BloomTexture);
+
                 builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
                 {
                     data.material.SetVector(NycShaderIDs.BlurOffset, data.blurOffset);
@@ -211,24 +214,22 @@ namespace Nyc.Rendering.Passes
             // 4. Composite & Color Grading Pass (Pass 2)
             using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomComposite", out var passData))
             {
-                passData.source = resourcesData.cameraColor;
-                passData.bloomTex = blurV;
+                passData.source = resourcesData.activeColorTexture;
                 passData.material = _material;
                 passData.passIndex = 2;
 
                 builder.UseTexture(passData.source, AccessFlags.Read);
-                builder.UseTexture(passData.bloomTex, AccessFlags.Read);
+                builder.UseGlobalTexture(NycShaderIDs.BloomTexture, AccessFlags.Read);
                 builder.SetRenderAttachment(composite, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc((RasterPassData data, RasterGraphContext context) =>
                 {
-                    data.material.SetTexture(NycShaderIDs.BloomTexture, data.bloomTex);
                     Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, data.passIndex);
                 });
             }
 
             // 5. Restore back to camera color
-            renderGraph.AddBlitPass(composite, resourcesData.cameraColor, Vector2.one, Vector2.zero, passName: "BloomRestore");
+            renderGraph.AddBlitPass(composite, resourcesData.activeColorTexture, Vector2.one, Vector2.zero, passName: "BloomRestore");
         }
 #else
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)

@@ -38,9 +38,11 @@ namespace Nyc.Gameplay.Pedestrians
         {
             public int Block;
             public float S;
+            public float PreviousS;
             public float Dir;
             public float Speed;
             public float Phase;
+            public float PreviousPhase;
             public float Scale;
             public float Seed;
             public Vector4 Tint;
@@ -82,6 +84,9 @@ namespace Nyc.Gameplay.Pedestrians
         Bounds _bounds;
         Vector2 _lastBuild = new Vector2(float.MaxValue, float.MaxValue);
         bool _ready;
+        float _simulationAccumulator;
+        float _renderAlpha;
+        const float SimulationStep = 1f / 60f;
         System.Random _rng = new System.Random(20261022);
 
         void Awake() => EnsureInit();
@@ -112,7 +117,15 @@ namespace Nyc.Gameplay.Pedestrians
             Vector2 focus = Focus();
             if (Vector2.Distance(focus, _lastBuild) > rebuildDistance) Rebuild(focus);
 
-            Tick(Time.deltaTime, focus);
+            _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
+            int steps = 0;
+            while (_simulationAccumulator >= SimulationStep && steps++ < 4)
+            {
+                Tick(SimulationStep, focus);
+                _simulationAccumulator -= SimulationStep;
+            }
+            if (steps == 4) _simulationAccumulator = 0f;
+            _renderAlpha = _simulationAccumulator / SimulationStep;
             Draw();
         }
 
@@ -121,6 +134,21 @@ namespace Nyc.Gameplay.Pedestrians
         {
             EnsureInit();
             if (CityConfig.Geo != null) Rebuild(Focus());
+        }
+
+        /// <summary>Traffic query used to keep vehicles from entering a busy curb/crossing.</summary>
+        public bool HasWalkerNear(Vector2 sourcePoint, float radius)
+        {
+            if (_walkers == null || CityConfig.Geo == null) return false;
+            float radiusSq = radius * radius;
+            for (int i = 0; i < walkerCount; i++)
+            {
+                Walker w = _walkers[i];
+                BlockRec block = CityConfig.Geo.Blocks[w.Block];
+                SampleBlock(block, w.S, sidewalkInset, out Vector2 pos, out _);
+                if ((pos - sourcePoint).sqrMagnitude <= radiusSq) return true;
+            }
+            return false;
         }
 
         // ------------------------------------------------------------------ simulation
@@ -136,6 +164,8 @@ namespace Nyc.Gameplay.Pedestrians
                 float perimeter = Perimeter(block.Poly);
                 if (perimeter < 1f) continue;
 
+                w.PreviousS = w.S;
+                w.PreviousPhase = w.Phase;
                 w.S += w.Dir * w.Speed * dt;
                 if (w.S > perimeter) w.S -= perimeter;
                 else if (w.S < 0f) w.S += perimeter;
@@ -159,6 +189,26 @@ namespace Nyc.Gameplay.Pedestrians
         void Draw()
         {
             if (walkerCount == 0) return;
+
+            // Build interpolated instance transforms at render rate. Without this, the fixed
+            // 60 Hz crowd update becomes visibly stepped on displays running at 75/90/120 Hz.
+            for (int i = 0; i < walkerCount; i++)
+            {
+                Walker w = _walkers[i];
+                BlockRec block = CityConfig.Geo.Blocks[w.Block];
+                float perimeter = Perimeter(block.Poly);
+                float previousS = w.PreviousS;
+                if (perimeter > 0f && Mathf.Abs(w.S - previousS) > perimeter * 0.5f)
+                    previousS += w.S > previousS ? perimeter : -perimeter;
+                float s = Mathf.Lerp(previousS, w.S, _renderAlpha);
+                if (perimeter > 0f) { s %= perimeter; if (s < 0f) s += perimeter; }
+                float phase = Mathf.Lerp(w.PreviousPhase, w.Phase, _renderAlpha);
+                SampleBlock(block, s, sidewalkInset, out Vector2 pos, out Vector2 tangent);
+                if (w.Dir < 0f) tangent = -tangent;
+                float heading = Mathf.Atan2(tangent.x, tangent.y);
+                _data[i].PosHeading = new Vector4(pos.x, CityFrame.SidewalkHeight, -pos.y, -heading);
+                _data[i].Params.x = phase;
+            }
 
             _instanceBuffer.SetData(_data, 0, 0, walkerCount);
             material.SetBuffer("_Instances", _instanceBuffer);
@@ -203,9 +253,11 @@ namespace Nyc.Gameplay.Pedestrians
                     {
                         Block = i,
                         S = (float)_rng.NextDouble() * perimeter,
+                        PreviousS = 0f,
                         Dir = _rng.Next(0, 2) == 0 ? -1f : 1f,
                         Speed = 1.05f + (float)_rng.NextDouble() * 0.65f,
                         Phase = (float)_rng.NextDouble() * Mathf.PI * 2f,
+                        PreviousPhase = 0f,
                         Scale = 0.92f + (float)_rng.NextDouble() * 0.16f,
                         Seed = (float)_rng.NextDouble(),
                         Tint = Palette[_rng.Next(0, Palette.Length)]

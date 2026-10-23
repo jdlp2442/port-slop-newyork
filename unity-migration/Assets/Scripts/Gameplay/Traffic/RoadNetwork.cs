@@ -71,6 +71,8 @@ namespace Nyc.Gameplay.Traffic
 
         [System.NonSerialized] public Lane[] Lanes = System.Array.Empty<Lane>();
         [System.NonSerialized] public int[][] Next = System.Array.Empty<int[]>();
+        [System.NonSerialized] int[] _adjacentLeft = System.Array.Empty<int>();
+        [System.NonSerialized] int[] _adjacentRight = System.Array.Empty<int>();
 
         [Header("Stats")]
         public int roadCount;
@@ -147,6 +149,7 @@ namespace Nyc.Gameplay.Traffic
             Lanes = lanes.ToArray();
             laneCount = Lanes.Length;
             BuildConnections();
+            BuildAdjacentLaneCache();
         }
 
         void AddLanes(List<Lane> lanes, Vector2[] pts, RawRoad road, int dir)
@@ -393,6 +396,52 @@ namespace Nyc.Gameplay.Traffic
                 if (d < bestDist) { bestDist = d; best = lane.Cum[i] + Mathf.Sqrt(l2) * t; }
             }
             return best;
+        }
+
+        /// <summary>Finds a parallel lane on the same road piece for a pre-junction lane change.</summary>
+        public int FindAdjacentLane(int laneId, int side)
+        {
+            if (laneId < 0 || laneId >= Lanes.Length) return -1;
+            if (side < 0 && laneId < _adjacentLeft.Length) return _adjacentLeft[laneId];
+            if (side > 0 && laneId < _adjacentRight.Length) return _adjacentRight[laneId];
+            return -1;
+        }
+
+        void BuildAdjacentLaneCache()
+        {
+            _adjacentLeft = new int[Lanes.Length];
+            _adjacentRight = new int[Lanes.Length];
+            for (int i = 0; i < Lanes.Length; i++) { _adjacentLeft[i] = -1; _adjacentRight[i] = -1; }
+            var groups = new Dictionary<string, List<int>>();
+            for (int i = 0; i < Lanes.Length; i++)
+            {
+                Lane l = Lanes[i];
+                string key = l.Name + "|" + l.Dir + "|" + l.IsHighway;
+                if (!groups.TryGetValue(key, out var list)) { list = new List<int>(); groups[key] = list; }
+                list.Add(i);
+            }
+            foreach (var group in groups.Values)
+            for (int n = 0; n < group.Count; n++)
+            {
+                int i = group[n];
+                Lane source = Lanes[i];
+                Vector2 mid = source.Points[source.Points.Length / 2];
+                Vector2 forward = (source.Points[source.Points.Length - 1] - source.Points[0]).normalized;
+                Vector2 lateral = new Vector2(-forward.y, forward.x);
+                float leftBest = float.MaxValue, rightBest = float.MaxValue;
+                for (int k = 0; k < group.Count; k++)
+                {
+                    int j = group[k]; if (j == i) continue;
+                    Lane candidate = Lanes[j];
+                    if (Mathf.Abs(candidate.Length - source.Length) > 24f) continue;
+                    Vector2 delta = candidate.Points[candidate.Points.Length / 2] - mid;
+                    float d = delta.magnitude;
+                    if (d < 1.2f || d > 7.5f) continue;
+                    float side = Vector2.Dot(delta, lateral);
+                    if (side < 0f && d < leftBest) { leftBest = d; _adjacentLeft[i] = j; }
+                    if (side > 0f && d < rightBest) { rightBest = d; _adjacentRight[i] = j; }
+                }
+            }
         }
 
         // ------------------------------------------------------------------ helpers

@@ -17,15 +17,19 @@ namespace Nyc.Gameplay.Traffic
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         public struct PackedMatrix
         {
-            public float m00, m01, m02, m03;
-            public float m10, m11, m12, m13;
-            public float m20, m21, m22, m23;
+            // Unity's DOTS instancing contract is column-major float3x4, not a row-major
+            // Matrix4x4 dump. Keep the field order identical to the official BRG sample.
+            public float c0x, c0y, c0z;
+            public float c1x, c1y, c1z;
+            public float c2x, c2y, c2z;
+            public float c3x, c3y, c3z;
 
             public PackedMatrix(Matrix4x4 m)
             {
-                m00 = m.m00; m01 = m.m01; m02 = m.m02; m03 = m.m03;
-                m10 = m.m10; m11 = m.m11; m12 = m.m12; m13 = m.m13;
-                m20 = m.m20; m21 = m.m21; m22 = m.m22; m23 = m.m23;
+                c0x = m.m00; c0y = m.m10; c0z = m.m20;
+                c1x = m.m01; c1y = m.m11; c1z = m.m21;
+                c2x = m.m02; c2y = m.m12; c2z = m.m22;
+                c3x = m.m03; c3y = m.m13; c3z = m.m23;
             }
         }
 
@@ -46,6 +50,35 @@ namespace Nyc.Gameplay.Traffic
         public int Capacity => _capacity;
         public int ActiveCount => _activeCount;
 
+        const int PackedMatrixBytes = 48;
+        const int InstanceDataPreambleBytes = 96;
+
+        /// <summary>Validates the raw-buffer contract without requiring a graphics device.</summary>
+        public static bool ValidateMetadataLayout(int capacity, out string error)
+        {
+            capacity = Mathf.Max(capacity, 16);
+            int objectOffset = InstanceDataPreambleBytes;
+            int worldOffset = objectOffset + capacity * PackedMatrixBytes;
+            int totalBytes = worldOffset + capacity * PackedMatrixBytes;
+            if (System.Runtime.InteropServices.Marshal.SizeOf<PackedMatrix>() != PackedMatrixBytes)
+            {
+                error = "PackedMatrix must remain a 48-byte float3x4 layout.";
+                return false;
+            }
+            if ((objectOffset % PackedMatrixBytes) != 0 || (worldOffset % PackedMatrixBytes) != 0)
+            {
+                error = "Matrix metadata offsets are not aligned to the packed matrix stride.";
+                return false;
+            }
+            if ((totalBytes & 3) != 0 || totalBytes <= worldOffset)
+            {
+                error = "Raw instance buffer size is invalid.";
+                return false;
+            }
+            error = string.Empty;
+            return true;
+        }
+
         public bool Initialize(Mesh mesh, Material material, int capacity = 512)
         {
             if (_initialized) return true;
@@ -63,23 +96,37 @@ namespace Nyc.Gameplay.Traffic
                 _meshID = _brg.RegisterMesh(mesh);
                 _materialID = _brg.RegisterMaterial(material);
 
-                // Raw buffer: capacity * 48 bytes for ObjectToWorld + capacity * 48 bytes for WorldToObject
-                int matrixBytes = _capacity * 48;
-                int totalBytes = matrixBytes * 2;
+            if (!ValidateMetadataLayout(_capacity, out string layoutError))
+            {
+                Debug.LogWarning($"[NYC BRG] Invalid metadata layout: {layoutError}");
+                Dispose();
+                return false;
+            }
+
+            // Keep a 96-byte zero/padding prefix, then ObjectToWorld and WorldToObject packed
+            // float3x4 arrays. The prefix guarantees safe zero loads for unspecified DOTS props.
+            int matrixBytes = _capacity * PackedMatrixBytes;
+            int objectOffsetBytes = InstanceDataPreambleBytes;
+            int worldOffsetBytes = objectOffsetBytes + matrixBytes;
+            int totalBytes = worldOffsetBytes + matrixBytes;
                 int totalInts = totalBytes / 4;
 
                 _buffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, totalInts, 4);
+
+                // Address 0 is the default value for any DOTS property not supplied in metadata.
+                // Explicitly clear the 96-byte prefix so that fallback loads are deterministic.
+                _buffer.SetData(new Vector4[InstanceDataPreambleBytes / 16], 0, 0, InstanceDataPreambleBytes / 16);
 
                 var metadata = new NativeArray<MetadataValue>(2, Allocator.Temp);
                 metadata[0] = new MetadataValue
                 {
                     NameID = Shader.PropertyToID("unity_ObjectToWorld"),
-                    Value = 0x80000000 | 0u
+                    Value = 0x80000000u | (uint)objectOffsetBytes
                 };
                 metadata[1] = new MetadataValue
                 {
                     NameID = Shader.PropertyToID("unity_WorldToObject"),
-                    Value = 0x80000000 | (uint)matrixBytes
+                    Value = 0x80000000u | (uint)worldOffsetBytes
                 };
 
                 _batchID = _brg.AddBatch(metadata, _buffer.bufferHandle);
@@ -124,11 +171,11 @@ namespace Nyc.Gameplay.Traffic
                 _packedWorldToObject[i] = default;
             }
 
-            // Upload ObjectToWorld array (starting at element index 0)
-            _buffer.SetData(_packedObjectToWorld, 0, 0, validCount);
+            // Upload the two packed arrays at their byte-addressed metadata offsets.
+            _buffer.SetData(_packedObjectToWorld, 0, InstanceDataPreambleBytes / PackedMatrixBytes, validCount);
 
-            // Upload WorldToObject array (starting at element index _capacity -> byte offset _capacity * 48)
-            _buffer.SetData(_packedWorldToObject, 0, _capacity, validCount);
+            _buffer.SetData(_packedWorldToObject, 0,
+                (InstanceDataPreambleBytes / PackedMatrixBytes) + _capacity, validCount);
         }
 
         unsafe JobHandle OnPerformCulling(BatchRendererGroup rendererGroup, BatchCullingContext cullingContext, BatchCullingOutput cullingOutput, IntPtr userContext)

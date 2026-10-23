@@ -118,6 +118,28 @@ definido por plataforma.
 - Probar BRG en un lote aislado y conservar `Graphics.RenderMeshInstanced` como fallback.
 - Activar `RemoteSession` solo cuando haya un servidor WebSocket explícito; Play no depende de él.
 
+## Estado de esta iteración (2026-10-23)
+
+- El piloto BRG ya existe en `NycVehicleBRGBackend` y se limita al lote 0 de vehículos; los demás
+  lotes mantienen `Graphics.RenderMeshInstanced` como fallback. Se validó en Unity Editor que
+  `ReinitializeBRGPilot()` devuelve `true` y que la consola queda sin errores.
+- El contrato raw del BRG (prefijo cero, matrices float3x4 columna-major, offsets de metadata y
+  capacidad) tiene una comprobación device-independent en el headless check.
+- El bloom Render Graph ya usa `SetGlobalTextureAfterPass`/`UseGlobalTexture`; no pasa un
+  `TextureHandle` directamente a `Material.SetTexture`.
+- `NYC/9. Capture Visual Regression Matrix` genera 16 PNG de Unity en
+  `Temp/visual-regression/unity` (4 localizaciones × 4 horas). La captura web queda pendiente de
+  ejecutar en un navegador con WebGPU habilitado; el navegador in-app bloqueó el servidor local.
+- Se añadió [`PARITY-ROADMAP.md`](PARITY-ROADMAP.md) con fases, salidas y criterios de aceptación,
+  además de [`Tools/parity/parity-manifest.json`](Tools/parity/parity-manifest.json) como contrato
+  reproducible de coordenadas, semillas, cámaras y horas.
+- La fase de estabilidad temporal ya usa fixed-step para jugador, peatones y tráfico, y resuelve
+  solapamientos de vehículos dentro del mismo carril sin degradar las métricas de tráfico.
+- La Fase 2 comenzó con `PedestrianCrowd.HasWalkerNear` y yield conservador de tráfico ante
+  ocupación de curb/crosswalk; el paso pendiente es portar cambios de carril y prioridad de giro.
+- El sistema de tráfico ya prepara cambios de carril anticipados usando adyacencias paralelas
+  cacheadas por `RoadNetwork`; quedan prioridad de giro y merge claims explícitos.
+
 ## Comandos de verificación
 
 ```powershell

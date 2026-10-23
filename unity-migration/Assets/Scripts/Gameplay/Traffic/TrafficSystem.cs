@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Nyc.Core;
+using Nyc.Gameplay.Pedestrians;
 
 namespace Nyc.Gameplay.Traffic
 {
@@ -11,8 +12,10 @@ namespace Nyc.Gameplay.Traffic
     /// BUS_DRIVER {a 1.1, b 2.5, T 1.5, s0 2.5}, LOOKAHEAD 70 m, spawn 100–300 m out of view,
     /// despawn beyond 1 200 m, buses keep to avenues.
     ///
-    /// Simplified versus the original: no lane changes, no crosswalk yielding, no merge claims.
-    /// Those need the per-lane occupancy sets of traffic.js and are listed in PHASE5.md.
+    /// The Unity port keeps the original fallback renderer while progressively matching traffic.js
+    /// with fixed-step motion, lane changes, crosswalk yielding and conservative turn priority.
+    /// Merge reservations are represented by a deterministic per-tick outgoing-lane claim set;
+    /// richer intersection precedence remains part of the parity fixtures.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class TrafficSystem : MonoBehaviour
@@ -20,6 +23,7 @@ namespace Nyc.Gameplay.Traffic
         [Header("References")]
         public RoadNetwork network;
         public TrafficRenderer renderer;
+        public PedestrianCrowd pedestrianCrowd;
         public ThirdPersonControllerManager controllers;
         public Camera viewCamera;
 
@@ -34,6 +38,8 @@ namespace Nyc.Gameplay.Traffic
         public float despawnRadius = 1200f;
         public float nearRadius = 350f;
         public float maxAccel = 9f;
+        [Tooltip("Fixed simulation step prevents visible hitching when a render frame stalls.")]
+        public float simulationStep = 1f / 60f;
 
         [Header("Stats")]
         public int activeCount;
@@ -50,11 +56,15 @@ namespace Nyc.Gameplay.Traffic
             public bool Bus;
             public float V0;
             public int NextLane;
+            public int NextTurn; // 0 straight, 1 left, 2 right
             public Vector2 Position;
             public float Y;
             public float Heading;
             public bool Active;
             public int Batch;
+            public float LaneChangeCooldown;
+            public int SpawnId;
+            public int RespawnCount;
         }
 
         public struct LaneQueryPoint
@@ -224,6 +234,9 @@ namespace Nyc.Gameplay.Traffic
 
         Agent[] _agents = System.Array.Empty<Agent>();
         readonly Dictionary<int, int> _laneHead = new Dictionary<int, int>(512);
+        // One deterministic reservation per outgoing lane during a fixed simulation tick.
+        // This mirrors traffic.js merge claims while keeping the existing fallback path intact.
+        readonly HashSet<int> _claimedNextLanes = new HashSet<int>();
         int[] _nextInLane = System.Array.Empty<int>();
         readonly List<VehicleInstance>[] _batches =
         {
@@ -236,6 +249,7 @@ namespace Nyc.Gameplay.Traffic
         };
 
         float _time;
+        float _simulationAccumulator;
         float _spawnTimer;
         Vector2 _spawnFocus = new Vector2(float.MaxValue, float.MaxValue);
         readonly List<int> _spawnLanes = new List<int>(4096);
@@ -246,12 +260,25 @@ namespace Nyc.Gameplay.Traffic
         /// <summary>Live agents (read-only use: HUD, minimap, debugging).</summary>
         public Agent[] Agents => _agents;
 
+        /// <summary>
+        /// Deterministic connection preview used by parity fixtures. The roll is normalized to
+        /// [0,1] and does not advance the live traffic RNG or mutate an agent.
+        /// </summary>
+        public int PreviewNextLane(int lane, float roll01, out int turn)
+        {
+            turn = 0;
+            if (network == null || network.Lanes == null || lane < 0 || lane >= network.Lanes.Length)
+                return -1;
+            return ChooseNext(lane, 0f, network.Lanes[lane].Length, out turn, Mathf.Clamp01(roll01));
+        }
+
         // ------------------------------------------------------------------ lifecycle
 
         public void Build()
         {
             if (!network) network = FindAnyObjectByType<RoadNetwork>();
             if (!renderer) renderer = FindAnyObjectByType<TrafficRenderer>();
+            if (!pedestrianCrowd) pedestrianCrowd = FindAnyObjectByType<PedestrianCrowd>();
             if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
             if (!viewCamera) viewCamera = Camera.main;
 
@@ -328,6 +355,8 @@ namespace Nyc.Gameplay.Traffic
                     HalfWidth = halfWidth,
                     V0 = v0,
                     NextLane = -1,
+                    SpawnId = i,
+                    RespawnCount = 0,
                     Active = false
                 };
             }
@@ -341,7 +370,15 @@ namespace Nyc.Gameplay.Traffic
         void Update()
         {
             if (_agents.Length == 0 || network == null) return;
-            Tick(Time.deltaTime);
+            float step = Mathf.Max(0.001f, simulationStep);
+            _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
+            int steps = 0;
+            while (_simulationAccumulator >= step && steps++ < 4)
+            {
+                Tick(step);
+                _simulationAccumulator -= step;
+            }
+            if (steps == 4) _simulationAccumulator = 0f;
         }
 
         public void Tick(float dt)
@@ -351,12 +388,15 @@ namespace Nyc.Gameplay.Traffic
             RebuildSpawnCandidates(focus);
 
             BuildLaneHeads();
+            _claimedNextLanes.Clear();
 
             for (int i = 0; i < _agents.Length; i++)
             {
                 if (!_agents[i].Active) continue;
                 Step(ref _agents[i], i, dt, focus);
             }
+
+            ResolveVehicleContacts();
 
             _spawnTimer += dt;
             if (_spawnTimer > 0.25f)
@@ -369,12 +409,71 @@ namespace Nyc.Gameplay.Traffic
             activeCount = CountActive();
         }
 
+        /// <summary>
+        /// IDM handles longitudinal following, but the source also prevents overlapping vehicle
+        /// hulls at intersections and lane merges. Resolve the remaining short-range contacts
+        /// after integration so cars cannot visually occupy the same space.
+        /// </summary>
+        void ResolveVehicleContacts()
+        {
+            for (int i = 0; i < _agents.Length; i++)
+            {
+                if (!_agents[i].Active) continue;
+                for (int j = i + 1; j < _agents.Length; j++)
+                {
+                    if (!_agents[j].Active || Mathf.Abs(_agents[i].Y - _agents[j].Y) > 2.4f) continue;
+                    float required = _agents[i].HalfLen + _agents[j].HalfLen + 0.35f;
+                    float distance = Vector2.Distance(_agents[i].Position, _agents[j].Position);
+                    if (distance >= required) continue;
+
+                    // Only vehicles on the same directed lane can form a persistent hull
+                    // overlap. Different lanes cross geometrically at junctions and must be
+                    // handled by signal/priority logic, otherwise the broad proximity test
+                    // would freeze traffic at every intersection.
+                    if (_agents[i].Lane != _agents[j].Lane) continue;
+
+                    float penetration = required - Mathf.Max(distance, 0.01f);
+                    if (_agents[i].Lane == _agents[j].Lane)
+                    {
+                        float push = penetration * 0.5f;
+                        if (_agents[i].S <= _agents[j].S)
+                        {
+                            _agents[i].S = Mathf.Max(_agents[i].HalfLen, _agents[i].S - push);
+                            _agents[j].S += push;
+                        }
+                        else
+                        {
+                            _agents[i].S += push;
+                            _agents[j].S = Mathf.Max(_agents[j].HalfLen, _agents[j].S - push);
+                        }
+                    }
+
+                    float contactSpeed = Mathf.Min(_agents[i].Speed, _agents[j].Speed);
+                    _agents[i].Speed = Mathf.Min(_agents[i].Speed, contactSpeed + 0.15f);
+                    _agents[j].Speed = Mathf.Min(_agents[j].Speed, contactSpeed + 0.15f);
+                }
+            }
+        }
+
         // ------------------------------------------------------------------ IDM
 
         void Step(ref Agent v, int index, float dt, Vector2 focus)
         {
             RoadNetwork.Lane lane = network.Lanes[v.Lane];
             Driver d = DriverForBatch(v.Batch);
+
+            v.LaneChangeCooldown = Mathf.Max(0f, v.LaneChangeCooldown - dt);
+            float initialDistanceToEnd = lane.Length - v.S - v.HalfLen;
+            if (!lane.IsHighway && v.LaneChangeCooldown <= 0f && initialDistanceToEnd > 18f && initialDistanceToEnd < 45f)
+            {
+                int adjacent = network.FindAdjacentLane(v.Lane, (index & 1) == 0 ? 1 : -1);
+                if (adjacent >= 0 && LaneGapClear(adjacent, v.S, 12f))
+                {
+                    v.Lane = adjacent;
+                    v.LaneChangeCooldown = 2.5f;
+                    lane = network.Lanes[v.Lane];
+                }
+            }
 
             float freeAcc = d.a * (1f - Mathf.Pow(v.Speed / Mathf.Max(0.1f, v.V0), 4f));
             float worst = 0f;
@@ -397,13 +496,24 @@ namespace Nyc.Gameplay.Traffic
             float distanceToEnd = lane.Length - v.S - v.HalfLen;
             if (distanceToEnd < lookAhead)
             {
-                if (v.NextLane < 0) v.NextLane = ChooseNext(v.Lane, v.S, lane.Length);
+                if (v.NextLane < 0) v.NextLane = ChooseNext(v.Lane, v.S, lane.Length, out v.NextTurn);
 
                 if (v.NextLane >= 0)
                 {
                     RoadNetwork.Lane next = network.Lanes[v.NextLane];
                     float nextGap = NextLaneGap(v.NextLane, distanceToEnd, v.HalfLen, out float nextSpeed);
                     if (nextGap < lookAhead) worst = Mathf.Min(worst, Brake(v, nextGap, nextSpeed, d));
+
+                    // Reserve the outgoing lane at the junction. The first deterministic agent
+                    // to claim it gets precedence; followers stop before the merge and retry on
+                    // the next fixed tick instead of entering the same connection simultaneously.
+                    if (!TryClaimMerge(v.NextLane))
+                        worst = Mathf.Min(worst, StopAt(v, distanceToEnd - 0.5f, 1.5f, d));
+
+                    // Left turns cross the opposing stream. Reserve the junction until the
+                    // closest oncoming vehicle has cleared, matching traffic.js yieldOncoming.
+                    if (v.NextTurn == 1 && HasOncomingTraffic(v.Lane, v.S, 48f))
+                        worst = Mathf.Min(worst, StopAt(v, distanceToEnd - 0.5f, 1.5f, d));
                 }
 
                 int phase = CityConfig.SignalPhase(_time, lane.IsAvenue);
@@ -412,6 +522,16 @@ namespace Nyc.Gameplay.Traffic
                 bool canStop = freeAcc + StopAt(v, distanceToEnd, 1f, d) > -d.b;
                 if (!green && !(amber && !canStop))
                     worst = Mathf.Min(worst, StopAt(v, distanceToEnd - 0.5f, 1f, d));
+
+                // Conservative curb/crosswalk yield. The web version tracks explicit crosswalk
+                // walkers; the Unity crowd currently exposes nearby curb occupancy so vehicles
+                // slow before entering a busy crossing rather than clipping pedestrians.
+                if (pedestrianCrowd != null && distanceToEnd < 12f)
+                {
+                    network.Sample(v.Lane, lane.Length, out Vector2 stopPoint, out _);
+                    if (pedestrianCrowd.HasWalkerNear(stopPoint, 3.2f))
+                        worst = Mathf.Min(worst, StopAt(v, distanceToEnd - 0.5f, 1.5f, d));
+                }
             }
 
             // The player counts as a leader (excluding helicopters and mismatched vertical levels e.g. viaducts)
@@ -480,6 +600,22 @@ namespace Nyc.Gameplay.Traffic
             return best;
         }
 
+        bool LaneGapClear(int lane, float s, float gap)
+        {
+            for (int i = 0; i < _agents.Length; i++)
+            {
+                if (!_agents[i].Active || _agents[i].Lane != lane) continue;
+                if (Mathf.Abs(_agents[i].S - s) < gap + _agents[i].HalfLen) return false;
+            }
+            return true;
+        }
+
+        bool TryClaimMerge(int outgoingLane)
+        {
+            if (outgoingLane < 0) return false;
+            return _claimedNextLanes.Add(outgoingLane);
+        }
+
         float Brake(Agent v, float gap, float leaderSpeed, Driver d)
         {
             float desired = d.s0 + Mathf.Max(0f,
@@ -493,8 +629,9 @@ namespace Nyc.Gameplay.Traffic
             return -d.a * Mathf.Pow(desired / Mathf.Max(distance, 0.1f), 2f);
         }
 
-        int ChooseNext(int lane, float s, float length)
+        int ChooseNext(int lane, float s, float length, out int turn, float forcedRoll = -1f)
         {
+            turn = 0;
             int[] options = network.Next[lane];
             if (options == null || options.Length == 0) return -1;
 
@@ -505,18 +642,47 @@ namespace Nyc.Gameplay.Traffic
             for (int i = 0; i < options.Length; i++)
             {
                 network.Sample(options[i], 1f, out _, out Vector2 dirNext);
-                bool straight = Vector2.Dot(dirEnd, dirNext) > 0.7f;
-                weights[i] = straight ? 3f : 1f;
+                float dot = Vector2.Dot(dirEnd, dirNext);
+                float cross = dirEnd.x * dirNext.y - dirEnd.y * dirNext.x;
+                bool straight = dot > 0.7f;
+                weights[i] = straight ? 4f : 1f;
+                if (cross > 0.25f) weights[i] = 0.85f; // left turn yields to oncoming traffic
                 total += weights[i];
             }
 
-            float r = (float)_rng.NextDouble() * total;
+            float r = (forcedRoll >= 0f ? Mathf.Clamp01(forcedRoll) : (float)_rng.NextDouble()) * total;
             for (int i = 0; i < options.Length; i++)
             {
                 r -= weights[i];
-                if (r <= 0f) return options[i];
+                if (r <= 0f)
+                {
+                    network.Sample(options[i], 1f, out _, out Vector2 chosenDir);
+                    float chosenCross = dirEnd.x * chosenDir.y - dirEnd.y * chosenDir.x;
+                    turn = Vector2.Dot(dirEnd, chosenDir) > 0.7f ? 0 : (chosenCross > 0f ? 1 : 2);
+                    return options[i];
+                }
             }
-            return options[options.Length - 1];
+            int fallback = options[options.Length - 1];
+            network.Sample(fallback, 1f, out _, out Vector2 fallbackDir);
+            float fallbackCross = dirEnd.x * fallbackDir.y - dirEnd.y * fallbackDir.x;
+            turn = Vector2.Dot(dirEnd, fallbackDir) > 0.7f ? 0 : (fallbackCross > 0f ? 1 : 2);
+            return fallback;
+        }
+
+        bool HasOncomingTraffic(int laneId, float s, float range)
+        {
+            RoadNetwork.Lane lane = network.Lanes[laneId];
+            network.Sample(laneId, lane.Length, out Vector2 junction, out Vector2 dir);
+            for (int i = 0; i < _agents.Length; i++)
+            {
+                Agent other = _agents[i];
+                if (!other.Active || other.Lane == laneId || Mathf.Abs(other.Y - 0f) > 2.4f) continue;
+                RoadNetwork.Lane otherLane = network.Lanes[other.Lane];
+                network.Sample(other.Lane, other.S, out Vector2 pos, out Vector2 otherDir);
+                if (Vector2.Distance(pos, junction) > range) continue;
+                if (Vector2.Dot(dir, otherDir) < -0.25f) return true;
+            }
+            return false;
         }
 
         // ------------------------------------------------------------------ population
@@ -571,15 +737,21 @@ namespace Nyc.Gameplay.Traffic
         {
             if (_spawnLanes.Count == 0) return false;
 
+            // Per-agent deterministic stream: respawns do not perturb other vehicles when the
+            // update order changes, which matches the web simulator's seeded population behavior.
+            int streamSeed = unchecked(10019 + v.SpawnId * 7919 + v.RespawnCount * 104729);
+            var spawnRng = new System.Random(streamSeed);
+            v.RespawnCount++;
+
             for (int attempt = 0; attempt < 16; attempt++)
             {
-                int laneId = _spawnLanes[_rng.Next(0, _spawnLanes.Count)];
+                int laneId = _spawnLanes[spawnRng.Next(0, _spawnLanes.Count)];
                 RoadNetwork.Lane lane = network.Lanes[laneId];
 
                 if (v.Bus && !lane.IsAvenue) continue;
                 if (lane.Length < 2f * v.HalfLen + 10f) continue;
 
-                float s = v.HalfLen + 5f + (float)_rng.NextDouble() * (lane.Length - 2f * v.HalfLen - 10f);
+                float s = v.HalfLen + 5f + (float)spawnRng.NextDouble() * (lane.Length - 2f * v.HalfLen - 10f);
                 network.Sample(laneId, s, out Vector2 pos, out Vector2 dir);
 
                 float d = Vector2.Distance(pos, focus);

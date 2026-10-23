@@ -199,6 +199,9 @@ namespace Nyc.Core
             }
 
             if (trafficSystem)
+                trafficSystem.pedestrianCrowd = pedestrianCrowd;
+
+            if (trafficSystem)
             {
                 // TrafficSystem expects a populated lane graph. The editor bake creates the
                 // RoadNetwork component, but the graph must still be built after GeoData loads

@@ -32,7 +32,8 @@ Shader "Nyc/VehiclePaint"
             ZTest LEqual
 
             HLSLPROGRAM
-            #pragma target 3.5
+            // BRG raw-buffer loads and DOTS instancing require SM 4.5+.
+            #pragma target 4.5
             #pragma vertex Vert
             #pragma fragment Frag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
@@ -127,6 +128,24 @@ Shader "Nyc/VehiclePaint"
                     metallic = 0.0;
                     emission = float3(1.0, 0.07, 0.04) * (0.25 + night * 2.2);
                 }
+                else if (part < 4.5)             // tyre
+                {
+                    albedo = float3(0.025, 0.025, 0.028);
+                    smoothness = 0.18;
+                    metallic = 0.0;
+                }
+                else if (part < 5.5)             // MTA blue belt
+                {
+                    albedo = float3(0.0, 0.345, 0.72);
+                    smoothness = 0.48;
+                    metallic = 0.05;
+                }
+                else if (part < 6.5)             // MTA cyan ribbon
+                {
+                    albedo = float3(0.0, 0.66, 0.91);
+                    smoothness = 0.42;
+                    metallic = 0.02;
+                }
                 else                              // tyre
                 {
                     albedo = float3(0.025, 0.025, 0.028);
@@ -161,6 +180,7 @@ Shader "Nyc/VehiclePaint"
             Cull Back
 
             HLSLPROGRAM
+            #pragma target 4.5
             #pragma vertex ShadowVert
             #pragma fragment ShadowFrag
             #pragma multi_compile_instancing

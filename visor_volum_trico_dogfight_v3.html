@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dogfight v3 - Volumetric Flight Shader</title>
+  <!-- Tailwind CSS para el diseño de la interfaz -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background-color: #030712;
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .hud-title {
+      font-family: 'Orbitron', sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      image-rendering: auto;
+    }
+    /* Estilo de controles deslizantes HUD */
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(30, 41, 59, 0.8);
+      height: 6px;
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+      border: 1px solid #e0f2fe;
+    }
+    .glass-hud {
+      background: rgba(10, 15, 29, 0.65);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+    }
+  </style>
+</head>
+<body class="relative w-screen h-screen">
+
+  <!-- Canvas WebGL Principal -->
+  <canvas id="glcanvas" class="cursor-grab active:cursor-grabbing"></canvas>
+
+  <!-- Mensaje de Fallo / Incompatibilidad -->
+  <div id="error-dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+    <div class="glass-hud max-w-xl w-full p-6 rounded-2xl border-red-500/50 text-red-200">
+      <div class="flex items-center space-x-3 text-red-400 mb-3">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <h2 class="text-lg font-bold hud-title tracking-wider">ERROR DE COMPILACIÓN SHADER</h2>
+      </div>
+      <p class="text-xs text-gray-300 mb-3">No se pudo inicializar el raymarching volumétrico WebGL2:</p>
+      <pre id="error-log" class="text-[11px] font-mono bg-black/60 p-4 rounded-xl border border-red-900/40 text-red-300 max-h-64 overflow-y-auto whitespace-pre-wrap"></pre>
+      <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 rounded-lg text-xs font-semibold text-white transition">Reintentar</button>
+    </div>
+  </div>
+
+  <!-- HUD Superior Izquierdo: Telemetría y Título -->
+  <header id="hud-top" class="fixed top-4 left-4 z-20 pointer-events-none select-none transition-all duration-300">
+    <div class="glass-hud px-4 py-3 rounded-2xl pointer-events-auto flex items-center space-x-4">
+      <div class="flex flex-col">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <h1 class="hud-title text-xs md:text-sm font-bold tracking-widest text-sky-300 uppercase">DOGFIGHT v3</h1>
+        </div>
+        <span class="text-[10px] text-slate-400 tracking-wider">VOLUMETRIC CLOUDS · FRAGCOORD</span>
+      </div>
+      <div class="h-6 w-px bg-slate-700"></div>
+      <div class="flex space-x-3 text-[11px]">
+        <div>
+          <span class="text-slate-500 block text-[9px] uppercase">FPS</span>
+          <span id="fps-stat" class="font-bold text-emerald-400">--</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px] uppercase">FRAME</span>
+          <span id="ms-stat" class="font-bold text-sky-400">-- ms</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px] uppercase">BUFFER</span>
+          <span id="res-stat" class="font-bold text-amber-300">-- x --</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Botón Rápido para Ocultar/Mostrar Interfaz -->
+  <button id="toggle-hud-btn" title="Presiona [H] para alternar HUD" class="fixed top-4 right-4 z-20 glass-hud hover:border-sky-400/50 text-slate-300 hover:text-sky-300 p-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-mono">
+    <svg id="eye-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+    <span class="hidden sm:inline">[H] HUD</span>
+  </button>
+
+  <!-- Panel de Control Principal (Flotante Abajo / Derecha) -->
+  <aside id="main-controls" class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-20 glass-hud p-4 rounded-2xl transition-all duration-300 flex flex-col gap-3">
+    
+    <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+      <span class="hud-title text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+        <svg class="w-3.5 h-3.5 text-sky-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+        </svg>
+        Parámetros de Vuelo y Render
+      </span>
+      <span class="text-[10px] text-sky-400/80 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/40">500 STEPS</span>
+    </div>
+
+    <!-- Escala de Renderizado (Crítico para Raymarching pesado) -->
+    <div>
+      <div class="flex justify-between items-center text-[11px] mb-1.5">
+        <span class="text-slate-400">Escala de Renderizado:</span>
+        <span id="scale-val-label" class="text-sky-300 font-bold">0.50x (Recomendado)</span>
+      </div>
+      <div class="grid grid-cols-4 gap-1.5">
+        <button data-res="0.25" class="res-btn py-1 text-xs rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-700 text-slate-300">0.25x</button>
+        <button data-res="0.5" class="res-btn py-1 text-xs rounded-lg border border-sky-500 bg-sky-500/20 text-sky-300 font-bold shadow-sm shadow-sky-500/30">0.50x</button>
+        <button data-res="0.75" class="res-btn py-1 text-xs rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-700 text-slate-300">0.75x</button>
+        <button data-res="1.0" class="res-btn py-1 text-xs rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-700 text-slate-300">1.0x (HQ)</button>
+      </div>
+    </div>
+
+    <!-- Control Temporal: Play/Pause, Rebobinar y Velocidad -->
+    <div class="space-y-1.5 pt-1">
+      <div class="flex justify-between items-center text-[11px]">
+        <span class="text-slate-400">Velocidad del tiempo:</span>
+        <span id="speed-label" class="text-sky-300 font-bold">1.00x</span>
+      </div>
+      <input id="time-speed" type="range" min="0.1" max="2.0" step="0.05" value="1.0" class="w-full">
+      <div class="flex items-center gap-2 pt-1">
+        <button id="pause-btn" class="flex-1 py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 transition flex items-center justify-center gap-1.5">
+          <svg id="pause-icon" class="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          <span id="pause-text">Pausar</span>
+        </button>
+        <button id="reset-time-btn" class="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 transition" title="Reiniciar ciclo de maniobras">
+          ↺ Reiniciar
+        </button>
+        <button id="reset-cam-btn" class="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 transition" title="Centrar cámara libre">
+          Centrar Vista
+        </button>
+      </div>
+    </div>
+
+    <!-- Modo de Navegación y Tips -->
+    <div class="text-[10px] text-slate-400 bg-slate-900/50 p-2.5 rounded-xl border border-slate-800 flex items-start gap-2">
+      <svg class="w-4 h-4 text-sky-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div>
+        <p><strong class="text-sky-300">Control Interactivo:</strong> Haz clic/toca y arrastra sobre la pantalla para rotar libremente la cámara del piloto.</p>
+      </div>
+    </div>
+
+    <!-- Botón Pantalla Completa -->
+    <button id="fullscreen-btn" class="w-full py-2 rounded-xl bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/40 text-sky-200 text-xs font-semibold transition flex items-center justify-center gap-2">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+      </svg>
+      Pantalla Completa
+    </button>
+  </aside>
+
+  <!-- Script con Shader Completo y Motor WebGL2 -->
+  <script>
+    // Código fuente del Vertex Shader (Pantalla completa con 1 triángulo)
+    const vsSource = `#version 300 es
+    in vec2 a_position;
+    void main() {
+      gl_Position = vec4(a_position, 0.0, 1.0);
+    }`;
+
+    // Fragment Shader: El código de 'Dogfight v3' adaptado con cabeceras WebGL2 y uniform de control de vista interactivo
+    const fsSource = `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform vec2 u_mouse_offset; // Control de vista interactivo manual (cabeceo y guiñada)
+out vec4 fragColor;
+
+#define CELL 4.0
+#define TOP 10.5
+#define BASE -4.0
+#define SIGMA 12.0
+#define SOFT 0.15
+#define FOG 0.025
+#define EXPOSURE 1.0
+#define AMB 0.8
+#define MS 0.25
+#define SUNK 2.2
+#define HDR 1
+#define HDR_PEAK 3.0
+#define AIRMASS 20.0
+
+const vec3 SUN_COL = 2.2 * exp(-vec3(0.04, 0.10, 0.23) * AIRMASS);
+const vec3 SKY_AMB = vec3(0.25, 0.38, 0.85);
+const vec3 ABSORB = vec3(0.02, 0.12, 0.30);
+#define MAX_OCT 3.0
+#define COVER 0.85
+
+#define G 0.6
+#define VSTALL 1.0
+#define CD0 0.03
+#define CDI 0.064
+#define NSTEP 24
+#define ROLL_EDGE 0.45
+#define ALPHA_MAX 0.4
+#define LOOK 0.4
+#define HEAD_W 0.6
+#define HEAD_MAX 0.44
+#define FOCAL 0.8
+#define BUFFET 0.006
+#define GREYOUT 0.75
+#define BUMP 0.9
+const vec2 START_XZ = vec2(6.0, 7.0);
+
+#define NSEG 10
+#define PERIOD 10.2927491
+#define THRUST 0.433359309
+const vec2 DELTA = vec2(12.94936, 18.538522);
+
+const vec4 SEG_CTL[20] = vec4[20](
+    vec4(0, 1.2, 1, 1), vec4(0.3, 6.28318531, 0.05, 1.1),
+    vec4(1.2, 1.879502, 1, 7.5), vec4(0.6, 1.4, 0, 0.55),
+    vec4(3.079502, 0.72, 7.5, 1.5), vec4(0.55, -2.4, 0.03, 0.65),
+    vec4(3.799502, 1.45462303, 1.5, 7), vec4(0.55, 0, 0, 0.1),
+    vec4(5.25412503, 0.65, 7, 2), vec4(0.5, 1, 0, 0.6),
+    vec4(5.90412503, 0.72, 2, 0.3), vec4(0.5, 3.14159265, 0.05, 0.65),
+    vec4(6.62412503, 0.64266543, 0.3, 5), vec4(0.45, 0, 0, 0.1),
+    vec4(7.26679046, 1.7, 5, 0.5), vec4(0.45, -9.42477796, 0.05, 1.6),
+    vec4(8.96679046, 0.525958674, 0.5, 8.5), vec4(0.5, 0, 0, 0.1),
+    vec4(9.49274913, 0.8, 8.5, 1), vec4(0.6, 0.627473313, 0.05, 0.6));
+
+const vec4 SEG_PV[10] = vec4[10](
+    vec4(0, 2.9, 0, 3.4),
+    vec4(0.0507198464, 2.67053789, 4.13379357, 3.52338509),
+    vec4(3.74681201, 2.59031219, 7.78056329, 3.22067816),
+    vec4(5.47268219, 2.83765658, 6.31415618, 3.17977652),
+    vec4(9.0814325, 4.2254347, 5.92196177, 2.75179586),
+    vec4(9.48244939, 4.93441658, 7.43341693, 2.63544653),
+    vec4(9.49932409, 5.73220964, 9.13955083, 2.60841807),
+    vec4(9.73657547, 6.03917821, 10.7381255, 2.6002799),
+    vec4(12.1425912, 3.94415826, 14.4845102, 3.2818046),
+    vec4(12.8253099, 3.09615207, 15.8652959, 3.39322281));
+
+const vec3 SEG_F[10] = vec3[10](
+    vec3(0, 0, 1),
+    vec3(0.000351658785, -0.109333821, 0.994005026),
+    vec3(0.904858906, 0.0509883854, -0.42264707),
+    vec3(0.742792249, 0.145437159, -0.653534779),
+    vec3(0.525616532, 0.438020095, 0.729291202),
+    vec3(0.0592275672, 0.424756679, 0.903368064),
+    vec3(0.0162195136, 0.368315912, 0.929559205),
+    vec3(0.360396141, -0.10876929, 0.926436108),
+    vec3(0.459269646, -0.531450628, 0.7117806),
+    vec3(0.233096297, -0.316783265, 0.919409854));
+
+const vec3 SEG_U[10] = vec3[10](
+    vec3(0, 1, 0),
+    vec3(0.00127091646, 0.994004334, 0.109333295),
+    vec3(-0.425216549, 0.156115545, -0.89152612),
+    vec3(0.484889186, 0.556233654, 0.674897473),
+    vec3(-0.809427354, -0.00634895082, 0.587185702),
+    vec3(-0.739696222, 0.626360208, -0.246012985),
+    vec3(0.740925815, -0.628689288, 0.23617518),
+    vec3(0.631875365, -0.702132635, -0.328242724),
+    vec3(-0.416013032, 0.579298297, 0.700961226),
+    vec3(-0.542923641, 0.741990116, 0.393299615));
+
+#define NGREY 103
+const float GREY[103] = float[103](0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0002, 0.0535, 0.1649, 0.2969, 0.4282, 0.5480, 0.6513, 0.7372, 0.8064, 0.8607, 0.9023, 0.9335, 0.9527, 0.9376, 0.8149, 0.5215, 0.1920, 0.0178, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0160, 0.0827, 0.1743, 0.2723, 0.3664, 0.4512, 0.5243, 0.5852, 0.6344, 0.6728, 0.6922, 0.6374, 0.4448, 0.1912, 0.0330, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0093, 0.0007, 0.0000, 0.0000, 0.0000);
+
+const float RELIEF[6] = float[6](1.0, 1.3, 1.0, 0.75, 0.6, 0.5);
+const mat3 ROT = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
+const vec3 SUN = vec3(-0.75, 0.02, 1.0);
+
+vec3 hash33(ivec3 c) {
+    vec3 p = fract(vec3(c) * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+float grad(ivec3 c, vec3 r) {
+    return dot(hash33(c) * 2.0 - 1.0, r);
+}
+
+float gnoise(vec3 p) {
+    ivec3 i = ivec3(floor(p));
+    vec3 f = fract(p);
+    vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    return mix(mix(mix(grad(i, f), grad(i + ivec3(1, 0, 0), f - vec3(1, 0, 0)), u.x),
+                   mix(grad(i + ivec3(0, 1, 0), f - vec3(0, 1, 0)), grad(i + ivec3(1, 1, 0), f - vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(grad(i + ivec3(0, 0, 1), f - vec3(0, 0, 1)), grad(i + ivec3(1, 0, 1), f - vec3(1, 0, 1)), u.x),
+                   mix(grad(i + ivec3(0, 1, 1), f - vec3(0, 1, 1)), grad(i + ivec3(1, 1, 1), f - vec3(1, 1, 1)), u.x), u.y), u.z);
+}
+
+float smin(float a, float b, float k) {
+    float h = max(k - abs(a - b), 0.0) / k;
+    return min(a, b) - h * h * k * 0.25;
+}
+
+float worley2(vec3 p) {
+    ivec3 i = ivec3(floor(p));
+    vec3 f = fract(p);
+    ivec3 n = ivec3(step(vec3(0.5), f)) * 2 - 1;
+    float m = 9.0;
+    for (int z = 0; z < 2; z++) {
+        for (int y = 0; y < 2; y++) {
+            for (int x = 0; x < 2; x++) {
+                ivec3 o = ivec3(x, y, z) * n;
+                vec3 r = vec3(o) + 0.15 + 0.7 * hash33(i + o) - f;
+                m = min(m, dot(r, r));
+            }
+        }
+    }
+    return m;
+}
+
+float heaps(vec3 p) {
+    ivec2 cell = ivec2(floor(p.xz / CELL));
+    float d = 1e3;
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            ivec3 c = ivec3(cell.x + i, 0, cell.y + j);
+            vec3 h = hash33(c);
+            if (h.z >= COVER) continue;
+            vec3 g = hash33(c + ivec3(0, 1, 0));
+            float r = CELL * (0.24 + 0.16 * g.x);
+            float top = 2.0 * g.y;
+            vec2 ctr = (vec2(c.xz) + 0.3 + 0.4 * h.xy) * CELL;
+            vec3 q = p - vec3(ctr.x, 0.0, ctr.y);
+            float y = clamp(q.y, BASE, top);
+            float rad = r * (0.65 + 1.2 * (1.0 - smoothstep(top - 3.0, top, y)));
+            float lo = 0.7 * (length(vec2(max(length(q.xz) - 0.5 * r, 0.0), q.y - y)) - rad);
+            if (lo >= d + 0.2 * CELL) continue;
+            vec2 wob = vec2(sin(y * 0.7 + 6.28 * g.z), cos(y * 0.6 + 6.28 * h.x)) * 0.35 * r;
+            float tower = (length(q - vec3(wob.x, y, wob.y)) - rad) * 0.7;
+            d = smin(d, tower, 0.2 * CELL);
+        }
+    }
+    return d;
+}
+
+float lobes(vec3 p, float d, float lod) {
+    vec3 q = p;
+    float fr = 0.5;
+    float fine = 0.35 + 0.65 * smoothstep(-5.0, 3.0, p.y);
+    for (int o = 0; o < 6; o++) {
+        float wgt = clamp(lod - float(o), 0.0, 1.0);
+        if (wgt <= 0.0) break;
+        float x = max(1.0 - worley2(q * fr) / 0.36, 0.0);
+        float h = 0.6 / fr * RELIEF[o] * (o == 0 ? 1.0 : fine) * wgt;
+        d -= h * x / sqrt(x + 0.04) * clamp(1.0 - d / (1.5 * h), 0.0, 1.0);
+        q = ROT * q + 3.1;
+        fr *= 2.1;
+    }
+    return d;
+}
+
+float lobesTail(vec3 p, float d, float lod) {
+    vec3 q = ROT * (ROT * p + 3.1) + 3.1;
+    float fr = 0.5 * 2.1 * 2.1;
+    float fine = 0.35 + 0.65 * smoothstep(-5.0, 3.0, p.y);
+    for (int o = 2; o < 6; o++) {
+        float wgt = clamp(lod - float(o), 0.0, 1.0);
+        if (wgt <= 0.0) break;
+        float x = max(1.0 - worley2(q * fr) / 0.36, 0.0);
+        float h = 0.6 / fr * RELIEF[o] * (o == 0 ? 1.0 : fine) * wgt;
+        d -= h * x / sqrt(x + 0.04) * clamp(1.0 - d / (1.5 * h), 0.0, 1.0);
+        q = ROT * q + 3.1;
+        fr *= 2.1;
+    }
+    return d;
+}
+
+float cloud(vec3 p, float lod) {
+    float d = heaps(p);
+    if (d > 2.0) return max(d, BASE - p.y);
+    return max(lobes(p, d, lod), BASE - p.y);
+}
+
+float puff(float d) {
+    return smoothstep(0.0, SOFT, -d);
+}
+
+float puffL(float d, float w) {
+    return smoothstep(-0.3 * w, w, -d);
+}
+
+float bumps(vec3 p, float oct) {
+    p = p * 3.0 + vec3(0.0, -0.1 * u_time, 0.0);
+    float n = 0.0, a = 1.0;
+    for (int o = 0; o < 4; o++) {
+        float w = clamp(oct - float(o), 0.0, 1.0);
+        if (w <= 0.0) break;
+        n += a * w * abs(gnoise(p));
+        p = ROT * p * 2.03;
+        a *= 0.5;
+    }
+    return BUMP * (n - 0.28);
+}
+
+float sunDepth(vec3 p, vec3 L, float lod) {
+    float od = 0.0, s = 0.08;
+    for (int k = 0; k < 6; k++) {
+        p += L * s;
+        float l = 1.0;
+        if (k < 3) l = 2.0;
+        if (k == 0) l = min(lod, 4.0);
+        float d = cloud(p, l);
+        if (k < 2 && d < 0.45) d -= bumps(p, 2.0);
+        od += puffL(d, SOFT * (1.0 + 2.0 * float(k))) * s;
+        s *= 1.6;
+    }
+    return od;
+}
+
+float skyDepth(vec3 p) {
+    return puffL(cloud(p + vec3(0.0, 0.5, 0.0), 2.0), 0.8) * 0.6
+         + puffL(cloud(p + vec3(0.0, 1.5, 0.0), 1.0), 0.8) * 1.0;
+}
+
+float hg(float c, float g) {
+    return (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * c, 1.5);
+}
+
+vec3 linearToSrgb(vec3 c) {
+    return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 skyCol(vec3 rd, vec3 L) {
+    float c = max(dot(rd, L), 0.0);
+    vec3 col = mix(vec3(0.38, 0.50, 0.80), vec3(0.08, 0.16, 0.45), smoothstep(0.0, 0.5, rd.y));
+    float side = max(dot(normalize(rd.xz + 1e-6), normalize(L.xz)), 0.0);
+    col = mix(col, vec3(1.0, 0.40, 0.15), side * side * exp(-8.0 * max(rd.y, 0.0)));
+    col = mix(vec3(0.26, 0.26, 0.42), col, smoothstep(-0.2, 0.0, rd.y));
+    return col + SUN_COL * (0.5 * pow(c, 4.0) + 2.5 * pow(c, 48.0));
+}
+
+float smooth5(float x) {
+    x = clamp(x, 0.0, 1.0);
+    return x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
+}
+
+float liftCap(float n, float v) {
+    float nav = (v / VSTALL) * (v / VSTALL);
+    return n / pow(1.0 + pow(abs(n) / nav, 6.0), 1.0 / 6.0);
+}
+
+vec2 controls(int k, float tau) {
+    vec4 a = SEG_CTL[2 * k];
+    vec4 b = SEG_CTL[2 * k + 1];
+    float n = a.z + (a.w - a.z) * smooth5(tau / b.x);
+    float x = (tau - b.z) / b.w;
+    float trap = 0.0;
+    if (x > 0.0 && x < 1.0) {
+        trap = smooth5(x / ROLL_EDGE) * smooth5((1.0 - x) / ROLL_EDGE);
+    }
+    return vec2(n, b.y / (b.w * (1.0 - ROLL_EDGE)) * trap);
+}
+
+mat4 flightRate(int k, float tau, mat4 s) {
+    vec3 f = s[1].xyz;
+    vec3 u = s[2].xyz;
+    float v = s[0].w;
+    vec2 c = controls(k, tau);
+    float n = liftCap(c.x, v);
+    vec3 r = cross(u, f);
+    float q = G * (n - u.y) / v;
+    float w = -G * r.y / v;
+    vec3 om = -q * r + w * u - c.y * f;
+    float dv = THRUST - CD0 * v * v - CDI * n * n / (v * v) - G * f.y;
+    return mat4(vec4(v * f, dv), vec4(cross(om, f), 0.0), vec4(cross(om, u), 0.0), vec4(0.0));
+}
+
+mat4 renorm(mat4 s) {
+    vec3 f = normalize(s[1].xyz);
+    vec3 u = normalize(s[2].xyz - dot(s[2].xyz, f) * f);
+    return mat4(s[0], vec4(f, 0.0), vec4(u, 0.0), vec4(0.0));
+}
+
+mat4 flight(float t) {
+    float per = floor(t / PERIOD);
+    float tp = t - per * PERIOD;
+    int k = 0;
+    for (int i = 1; i < NSEG; i++) {
+        if (tp >= SEG_CTL[2 * i].x) {
+            k = i;
+        }
+    }
+    float tau = tp - SEG_CTL[2 * k].x;
+    mat4 s = mat4(SEG_PV[k], vec4(SEG_F[k], 0.0), vec4(SEG_U[k], 0.0), vec4(0.0));
+    float h = tau / float(NSTEP);
+    for (int i = 0; i < NSTEP; i++) {
+        float ta = float(i) * h;
+        mat4 k1 = flightRate(k, ta, s);
+        mat4 k2 = flightRate(k, ta + 0.5 * h, s + (0.5 * h) * k1);
+        mat4 k3 = flightRate(k, ta + 0.5 * h, s + (0.5 * h) * k2);
+        mat4 k4 = flightRate(k, ta + h, s + h * k3);
+        s = renorm(s + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4));
+    }
+    vec3 shift = vec3(START_XZ.x + per * DELTA.x, 0.0, START_XZ.y + per * DELTA.y);
+    float load = liftCap(controls(k, tau).x, s[0].w);
+    return mat4(vec4(s[0].xyz + shift, s[0].w), s[1], s[2], vec4(load, 0.0, 0.0, 0.0));
+}
+
+mat3 airframe(mat4 fs) {
+    float aoa = ALPHA_MAX * fs[3].x * VSTALL * VSTALL / (fs[0].w * fs[0].w);
+    vec3 fw = cos(aoa) * fs[1].xyz + sin(aoa) * fs[2].xyz;
+    vec3 up = cos(aoa) * fs[2].xyz - sin(aoa) * fs[1].xyz;
+    return mat3(cross(up, fw), up, fw);
+}
+
+vec3 rotAxis(vec3 v, vec3 a, float t) {
+    return v * cos(t) + cross(a, v) * sin(t) + a * dot(a, v) * (1.0 - cos(t));
+}
+
+float greyAt(float t) {
+    float x = fract(t / PERIOD) * float(NGREY);
+    float i = floor(x);
+    float f = x - i;
+    int k = int(i);
+    float w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
+    float w1 = (3.0 * f * f * f - 6.0 * f * f + 4.0) / 6.0;
+    float w2 = (-3.0 * f * f * f + 3.0 * f * f + 3.0 * f + 1.0) / 6.0;
+    float w3 = f * f * f / 6.0;
+    return w0 * GREY[(k + NGREY - 1) % NGREY] + w1 * GREY[k % NGREY]
+         + w2 * GREY[(k + 1) % NGREY] + w3 * GREY[(k + 2) % NGREY];
+}
+
+float interiorNoise(vec3 p, float t, float px) {
+    vec3 q = p * 4.0 + vec3(0.3 * u_time, -0.15 * u_time, 0.0);
+    float oct = clamp(log2(0.25 / (2.0 * px * max(t, 0.05))) / 1.02 + 1.0, 1.0, 5.0);
+    float n = 0.0, a = 1.0, wsum = 0.0;
+    for (int o = 0; o < 6; o++) {
+        float w = clamp(oct - float(o), 0.0, 1.0);
+        if (w <= 0.0) break;
+        n += a * w * abs(gnoise(q));
+        wsum += a * w;
+        q = ROT * q * 2.03;
+        a *= 0.75;
+    }
+    return clamp(n / max(wsum, 1e-3) * 2.2, 0.0, 1.0);
+}
+
+void main() {
+    vec2 fragCoord = gl_FragCoord.xy;
+    vec2 uv = (fragCoord - 0.5 * u_resolution.xy) / u_resolution.y;
+    vec3 L = normalize(SUN);
+    mat4 fs = flight(u_time);
+    vec3 ro = fs[0].xyz;
+    float v = fs[0].w;
+    float load = fs[3].x;
+    float liftUse = load * VSTALL * VSTALL / (v * v);
+    mat3 af = airframe(fs);
+    vec3 upb = af[1];
+    vec3 fw = af[2];
+
+    vec3 ahead = airframe(flight(u_time + LOOK))[2];
+    vec3 ax = cross(fw, ahead);
+    float lead = atan(length(ax), dot(fw, ahead));
+    if (lead > 1e-4) {
+        float hd = HEAD_MAX * tanh(HEAD_W * lead / HEAD_MAX);
+        ax = normalize(ax);
+        fw = rotAxis(fw, ax, hd);
+        upb = rotAxis(upb, ax, hd);
+    }
+    vec3 rtb = cross(upb, fw);
+
+    float buf = BUFFET * smoothstep(0.55, 0.9, liftUse);
+    vec2 shake = vec2(0.6 * sin(u_time * 71.3) + 0.4 * sin(u_time * 113.7 + 1.3),
+                      0.6 * sin(u_time * 89.1 + 2.1) + 0.4 * sin(u_time * 131.9 + 0.7)) * buf;
+    fw = normalize(fw + shake.x * rtb + shake.y * upb);
+    rtb = normalize(cross(upb, fw));
+    upb = cross(fw, rtb);
+
+    // Inyección de rotación de mouse/touch interactiva
+    if (length(u_mouse_offset) > 0.001) {
+        // Rotación alrededor de upb (yaw / acimut)
+        fw = rotAxis(fw, upb, -u_mouse_offset.x);
+        rtb = rotAxis(rtb, upb, -u_mouse_offset.x);
+        // Rotación alrededor de rtb (pitch / cabeceo)
+        fw = rotAxis(fw, rtb, -u_mouse_offset.y);
+        upb = rotAxis(upb, rtb, -u_mouse_offset.y);
+    }
+
+    vec3 rd = normalize(uv.x * rtb + uv.y * upb + FOCAL * fw);
+
+    float ph = mix(hg(dot(rd, L), -0.2), hg(dot(rd, L), 0.6), 0.3);
+    vec3 haze = skyCol(rd, L);
+    vec3 sigT = SIGMA * (1.0 + ABSORB);
+    vec3 albedo = 1.0 / (1.0 + ABSORB);
+    float tEnd = 120.0;
+    if (rd.y > 1e-4) tEnd = min(tEnd, (TOP - ro.y) / rd.y);
+    if (rd.y < -1e-4) tEnd = min(tEnd, (BASE - ro.y) / rd.y);
+    float t = 0.0;
+    vec3 T = vec3(1.0), S = vec3(0.0);
+    if (ro.y > TOP) t = (TOP - ro.y) / rd.y;
+    float jit = fract(52.9829189 * fract(dot(fragCoord, vec2(0.06711056, 0.00583715))));
+    float px = 1.0 / (u_resolution.y * FOCAL);
+
+    for (int i = 0; i < 500 && t < tEnd && T.r > 0.03; i++) {
+        float dt = 0.03 + 0.003 * t;
+        vec3 p = ro + rd * (t + jit * dt);
+        float hd = heaps(p);
+        if (hd > 2.0) {
+            vec2 f = mod(p.xz, CELL);
+            float edge = min(min(f.x, CELL - f.x), min(f.y, CELL - f.y));
+            t += max(min(hd - 1.9, edge + CELL - 3.9), dt);
+            continue;
+        }
+        float d2 = lobes(p, hd, 2.0);
+        float dc = d2 - 0.25;
+        if (dc > 0.0) {
+            t += max(dc * 0.5, dt);
+            continue;
+        }
+        float lod = clamp(log2(0.6 / (px * max(t, 0.1))) / 1.07 + 1.0, 2.0, MAX_OCT);
+        float d = lobesTail(p, d2, lod);
+        if (d > 0.45) {
+            t += max((d - 0.45) * 0.5, dt);
+            continue;
+        }
+        float foct = clamp(log2(0.33 / (2.0 * px * max(t, 0.1))) + 1.0, 1.0, 4.0);
+        d -= bumps(p, foct);
+        d = max(d, BASE - p.y);
+        float dens = puff(d) * smoothstep(0.0, 0.08, t);
+        float depthIn = smoothstep(SOFT, 0.7, -d);
+        float lightK = 1.0;
+        if (depthIn > 0.0) {
+            float near = 1.0 - smoothstep(3.0, 4.0, t);
+            float dmod = 0.096, lk = 1.23;
+            if (near > 0.0) {
+                float n0 = interiorNoise(p, t, px);
+                float n1 = interiorNoise(p + L * 0.05, t, px);
+                float f = smoothstep(0.48, 0.58, n0);
+                float face = clamp(0.5 + (n0 - n1) * 12.0, 0.0, 1.0);
+                dmod = mix(dmod, 0.03 + 0.97 * f, near);
+                lk = mix(lk, (0.45 + 1.1 * face) * (1.3 - 0.5 * f), near);
+            }
+            dens *= mix(1.0, dmod, depthIn);
+            lightK = mix(1.0, lk, depthIn);
+        }
+        if (dens <= 0.0) {
+            t += dt;
+            continue;
+        }
+        float od = sunDepth(p, L, lod);
+        vec3 sigMS = SIGMA * (1.0 + 0.3 * ABSORB);
+        vec3 sun = exp(-sigT * od) * ph
+                 + MS * 1.4 * (0.5 * exp(-0.25 * sigMS * od) + 0.25 * exp(-0.06 * sigMS * od)) * mix(ph, 1.0, 0.6);
+        float hy = smoothstep(-4.0, 8.0, p.y);
+        vec3 amb = AMB * SKY_AMB * (0.1 + 0.25 * hy) * exp(-1.5 * skyDepth(p));
+        vec3 lum = mix((SUNK * SUN_COL * sun + amb) * lightK, haze, 1.0 - exp(-FOG * max(t - 8.0, 0.0)));
+        vec3 tr = exp(-sigT * dens * dt);
+        S += T * albedo * (1.0 - tr) * lum;
+        T *= tr;
+        t += dt;
+    }
+    vec3 l = S + T * haze;
+    float grey = GREYOUT * greyAt(u_time) * smoothstep(0.25, 0.95, length(uv));
+    l = mix(l, vec3(dot(l, vec3(0.2126, 0.7152, 0.0722))), 0.6 * grey) * (1.0 - grey);
+
+#if HDR
+    float peak = HDR_PEAK;
+#else
+    float peak = 1.0;
+#endif
+    float m = max(max(l.r, l.g), max(l.b, 1e-6));
+    vec3 Y = l * (peak * (1.0 - exp(-EXPOSURE * m / peak)) / m);
+    fragColor = vec4(linearToSrgb(Y) + (jit - 0.5) / 255.0, 1.0);
+}`;
+
+    // Estado de la aplicación
+    const state = {
+      resolutionScale: 0.50, // Res por defecto 'half' para balance de FPS
+      time: 0.0,
+      timeSpeed: 1.0,
+      isPaused: false,
+      mouseOffset: { x: 0.0, y: 0.0 },
+      isDragging: false,
+      lastMousePos: { x: 0, y: 0 },
+      hudVisible: true
+    };
+
+    // Elementos DOM
+    const canvas = document.getElementById('glcanvas');
+    const hudTop = document.getElementById('hud-top');
+    const mainControls = document.getElementById('main-controls');
+    const toggleHudBtn = document.getElementById('toggle-hud-btn');
+    const fpsStat = document.getElementById('fps-stat');
+    const msStat = document.getElementById('ms-stat');
+    const resStat = document.getElementById('res-stat');
+    const speedSlider = document.getElementById('time-speed');
+    const speedLabel = document.getElementById('speed-label');
+    const pauseBtn = document.getElementById('pause-btn');
+    const pauseText = document.getElementById('pause-text');
+    const resetTimeBtn = document.getElementById('reset-time-btn');
+    const resetCamBtn = document.getElementById('reset-cam-btn');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const scaleValLabel = document.getElementById('scale-val-label');
+    const resButtons = document.querySelectorAll('.res-btn');
+    const errorDialog = document.getElementById('error-dialog');
+    const errorLog = document.getElementById('error-log');
+
+    // Inicialización del contexto WebGL2
+    const gl = canvas.getContext('webgl2', {
+      powerPreference: 'high-performance',
+      antialias: false,
+      depth: false,
+      alpha: false,
+      preserveDrawingBuffer: false
+    });
+
+    if (!gl) {
+      showError("WebGL 2.0 no está disponible o soportado por tu navegador/GPU.");
+    }
+
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(info || "Error al compilar el shader.");
+      }
+      return shader;
+    }
+
+    let program, uResolutionLoc, uTimeLoc, uMouseOffsetLoc;
+
+    try {
+      const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+      const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+      program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        throw new Error(info || "Error al vincular el programa WebGL2.");
+      }
+
+      gl.useProgram(program);
+
+      // Localizaciones de uniforms
+      uResolutionLoc = gl.getUniformLocation(program, 'u_resolution');
+      uTimeLoc = gl.getUniformLocation(program, 'u_time');
+      uMouseOffsetLoc = gl.getUniformLocation(program, 'u_mouse_offset');
+
+      // Geometría: triángulo de pantalla completa
+      const posBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1,
+         3, -1,
+        -1,  3
+      ]), gl.STATIC_DRAW);
+
+      const aPositionLoc = gl.getAttribLocation(program, 'a_position');
+      gl.enableVertexAttribArray(aPositionLoc);
+      gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    } catch (err) {
+      showError(err.message);
+    }
+
+    function showError(msg) {
+      errorDialog.classList.remove('hidden');
+      errorLog.textContent = msg;
+    }
+
+    // Manejo de redimensionado de canvas con escalado de resolución
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const displayW = window.innerWidth;
+      const displayH = window.innerHeight;
+      
+      const renderW = Math.max(128, Math.floor(displayW * dpr * state.resolutionScale));
+      const renderH = Math.max(72, Math.floor(displayH * dpr * state.resolutionScale));
+
+      if (canvas.width !== renderW || canvas.height !== renderH) {
+        canvas.width = renderW;
+        canvas.height = renderH;
+        gl.viewport(0, 0, renderW, renderH);
+        resStat.textContent = `${renderW} × ${renderH}`;
+      }
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Eventos de ratón / táctil para rotar la cámara
+    function handlePointerDown(e) {
+      state.isDragging = true;
+      state.lastMousePos = {
+        x: e.clientX !== undefined ? e.clientX : e.touches[0].clientX,
+        y: e.clientY !== undefined ? e.clientY : e.touches[0].clientY
+      };
+    }
+
+    function handlePointerMove(e) {
+      if (!state.isDragging) return;
+      const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+      const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+
+      const dx = clientX - state.lastMousePos.x;
+      const dy = clientY - state.lastMousePos.y;
+
+      const sensitivity = 0.0035;
+      state.mouseOffset.x += dx * sensitivity;
+      state.mouseOffset.y = Math.max(-1.4, Math.min(1.4, state.mouseOffset.y + dy * sensitivity));
+
+      state.lastMousePos = { x: clientX, y: clientY };
+    }
+
+    function handlePointerUp() {
+      state.isDragging = false;
+    }
+
+    canvas.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+
+    canvas.addEventListener('touchstart', handlePointerDown, { passive: true });
+    window.addEventListener('touchmove', handlePointerMove, { passive: true });
+    window.addEventListener('touchend', handlePointerUp);
+
+    // Controles de Resolución UI
+    resButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        resButtons.forEach(b => {
+          b.className = "res-btn py-1 text-xs rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-700 text-slate-300";
+        });
+        btn.className = "res-btn py-1 text-xs rounded-lg border border-sky-500 bg-sky-500/20 text-sky-300 font-bold shadow-sm shadow-sky-500/30";
+        state.resolutionScale = parseFloat(btn.getAttribute('data-res'));
+        scaleValLabel.textContent = `${state.resolutionScale.toFixed(2)}x ${state.resolutionScale === 0.5 ? '(Recomendado)' : (state.resolutionScale === 1.0 ? '(HQ)' : '')}`;
+        resizeCanvas();
+      });
+    });
+
+    // Control de Velocidad
+    speedSlider.addEventListener('input', (e) => {
+      state.timeSpeed = parseFloat(e.target.value);
+      speedLabel.textContent = `${state.timeSpeed.toFixed(2)}x`;
+    });
+
+    // Pausar / Reanudar
+    pauseBtn.addEventListener('click', () => {
+      state.isPaused = !state.isPaused;
+      pauseText.textContent = state.isPaused ? "Reanudar" : "Pausar";
+      pauseBtn.classList.toggle('border-amber-500', state.isPaused);
+      pauseBtn.classList.toggle('bg-amber-950/40', state.isPaused);
+    });
+
+    // Reiniciar tiempo y centrar cámara
+    resetTimeBtn.addEventListener('click', () => {
+      state.time = 0.0;
+    });
+
+    resetCamBtn.addEventListener('click', () => {
+      state.mouseOffset = { x: 0.0, y: 0.0 };
+    });
+
+    // Pantalla completa
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    // Alternar visibilidad de la interfaz (Tecla 'H' o botón)
+    function toggleHud() {
+      state.hudVisible = !state.hudVisible;
+      if (state.hudVisible) {
+        hudTop.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
+        mainControls.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+      } else {
+        hudTop.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4');
+        mainControls.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+      }
+    }
+
+    toggleHudBtn.addEventListener('click', toggleHud);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') {
+        toggleHud();
+      } else if (e.code === 'Space') {
+        pauseBtn.click();
+      }
+    });
+
+    // Bucle de Renderizado y Medición de Rendimiento
+    let lastTime = performance.now();
+    let frameCounter = 0;
+    let fpsTimer = 0;
+
+    function render(currentTime) {
+      const delta = (currentTime - lastTime) / 1000;
+      lastTime = currentTime;
+
+      // Actualizar contador FPS cada 400ms
+      frameCounter++;
+      fpsTimer += delta;
+      if (fpsTimer >= 0.4) {
+        const currentFps = Math.round(frameCounter / fpsTimer);
+        const frameMs = (1000 / currentFps).toFixed(1);
+        fpsStat.textContent = currentFps;
+        msStat.textContent = `${frameMs} ms`;
+        
+        // Colores según rendimiento
+        if (currentFps >= 45) {
+          fpsStat.className = "font-bold text-emerald-400";
+        } else if (currentFps >= 25) {
+          fpsStat.className = "font-bold text-amber-400";
+        } else {
+          fpsStat.className = "font-bold text-rose-400";
+        }
+
+        frameCounter = 0;
+        fpsTimer = 0;
+      }
+
+      // Incrementar tiempo
+      if (!state.isPaused) {
+        state.time += delta * state.timeSpeed;
+      }
+
+      // Enviar uniforms al Shader
+      gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+      gl.uniform1f(uTimeLoc, state.time);
+      gl.uniform2f(uMouseOffsetLoc, state.mouseOffset.x, state.mouseOffset.y);
+
+      // Dibujar pantalla completa
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      requestAnimationFrame(render);
+    }
+
+    // Iniciar loop al cargar la ventana
+    window.onload = function() {
+      requestAnimationFrame(render);
+    };
+  </script>
+</body>
+</html>

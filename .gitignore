@@ -18,6 +18,8 @@
 [Uu]ser[Ss]ettings/
 [Mm]emoryCaptures/
 Recordings/
+**/[Aa]ssets/_Recovery/
+**/[Aa]ssets/_Recovery.meta
 
 # IDE and OS
 .vs/
