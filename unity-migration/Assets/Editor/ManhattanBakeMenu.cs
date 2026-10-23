@@ -343,13 +343,13 @@ namespace Nyc.EditorTools
         public static void CreateMaterials()
         {
             Directory.CreateDirectory(Root + "/Materials");
-            var facade = Make("Facade", new Color(0.72f, 0.68f, 0.60f), 0.15f, 0.0f);
-            var solid  = Make("Solid",  new Color(0.62f, 0.60f, 0.56f), 0.10f, 0.0f);
-            var walk   = Make("Sidewalk", new Color(0.78f, 0.77f, 0.74f), 0.05f, 0.0f);
-            var road   = Make("Road", new Color(0.16f, 0.16f, 0.17f), 0.35f, 0.0f);
-            var park   = Make("Park", new Color(0.42f, 0.52f, 0.29f), 0.02f, 0.0f);
-            var land   = Make("Land", new Color(0.45f, 0.45f, 0.44f), 0.02f, 0.0f);
-            var water  = Make("Water", new Color(0.10f, 0.17f, 0.20f), 0.92f, 0.0f);
+            var facade = Make("Facade", "Nyc/Facade", new Color(0.847f, 0.804f, 0.722f), 0.15f, 0.0f);
+            var solid  = Make("Solid",  "Universal Render Pipeline/Lit", new Color(0.62f, 0.60f, 0.56f), 0.10f, 0.0f);
+            var walk   = Make("Sidewalk", "Nyc/Sidewalk", new Color(0.557f, 0.553f, 0.522f), 0.05f, 0.0f);
+            var road   = Make("Road", "Nyc/RoadSurface", new Color(0.16f, 0.16f, 0.17f), 0.35f, 0.0f);
+            var park   = Make("Park", "Universal Render Pipeline/Lit", new Color(0.42f, 0.52f, 0.29f), 0.02f, 0.0f);
+            var land   = Make("Land", "Universal Render Pipeline/Lit", new Color(0.45f, 0.45f, 0.44f), 0.02f, 0.0f);
+            var water  = Make("Water", "Nyc/Water", new Color(0.10f, 0.17f, 0.20f), 0.92f, 0.0f);
 
             var builder = FindOrCreateBuilder();
             builder.facadeMaterial = facade;
@@ -362,7 +362,7 @@ namespace Nyc.EditorTools
             EditorUtility.SetDirty(builder);
             AssetDatabase.SaveAssets();
             Selection.activeObject = builder;
-            Debug.Log("[NYC] Default URP materials created in " + Root + "/Materials");
+            Debug.Log("[NYC] Default NYC and URP materials created in " + Root + "/Materials");
         }
 
         [MenuItem("NYC/2. Build Manhattan Mesh", priority = 2)]
@@ -505,20 +505,29 @@ namespace Nyc.EditorTools
             return go.AddComponent<ManhattanMeshBuilder>();
         }
 
-        static Material Make(string name, Color color, float smoothness, float metallic)
+        static Material Make(string name, string shaderName, Color color, float smoothness, float metallic)
         {
             string path = $"{Root}/Materials/{name}.mat";
+            var shader = Shader.Find(shaderName) ?? Shader.Find("Universal Render Pipeline/Lit");
             var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (existing) return existing;
+            if (existing)
+            {
+                if (shader && existing.shader != shader)
+                {
+                    existing.shader = shader;
+                    EditorUtility.SetDirty(existing);
+                }
+                return existing;
+            }
 
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (!shader) { Debug.LogError("[NYC] URP is not the active render pipeline."); return null; }
+            if (!shader) { Debug.LogError($"[NYC] Shader {shaderName} not found."); return null; }
 
             var m = new Material(shader) { name = name };
-            m.SetColor("_BaseColor", color);
-            m.SetFloat("_Smoothness", smoothness);
-            m.SetFloat("_Metallic", metallic);
-            m.enableInstancing = false;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
+            if (m.HasProperty("_StoneColor")) m.SetColor("_StoneColor", color);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
+            m.enableInstancing = true;
             AssetDatabase.CreateAsset(m, path);
             return m;
         }

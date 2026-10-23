@@ -8,6 +8,7 @@ namespace UnityEngine
     public class Object
     {
         public string name;
+        public HideFlags hideFlags;
         public static implicit operator bool(Object o) => o != null;
         public static void Destroy(Object o) { }
         public static void DestroyImmediate(Object o) { }
@@ -95,6 +96,7 @@ namespace UnityEngine
         public float r, g, b, a;
         public Color(float r, float g, float b, float a = 1f) { this.r = r; this.g = g; this.b = b; this.a = a; }
         public static Color white => new Color(1, 1, 1, 1);
+        public static Color black => new Color(0, 0, 0, 1);
         public Color linear => this;
         public static Color Lerp(Color x, Color y, float t) =>
             new Color(x.r + (y.r - x.r) * t, x.g + (y.g - x.g) * t, x.b + (y.b - x.b) * t, x.a + (y.a - x.a) * t);
@@ -277,9 +279,10 @@ namespace UnityEngine
 
     public class Material : Object
     {
+        public Shader shader;
         public bool enableInstancing;
         public Color color;
-        public Material(Shader s) { }
+        public Material(Shader s) { shader = s; }
         public void SetColor(string id, Color c) { }
         public void SetColor(int id, Color c) { }
         public void SetFloat(string id, float v) { }

@@ -35,6 +35,7 @@ Shader "Nyc/RoadPaint"
             Cull Off
             ZWrite Off
             ZTest LEqual
+            Offset -2, -2
             Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
@@ -155,8 +156,9 @@ Shader "Nyc/RoadPaint"
                 inputData.bakedGI = SampleSH(normalWS);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - roughness);
                 half4 color = UniversalFragmentPBR(inputData, albedo, 0.0h, half3(0, 0, 0),
-                                                   roughness, 1.0h, 0.0h, alpha);
+                                                   smoothness, 1.0h, 0.0h, alpha);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

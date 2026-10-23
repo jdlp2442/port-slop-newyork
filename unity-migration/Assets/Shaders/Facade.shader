@@ -159,7 +159,25 @@ Shader "Nyc/Facade"
                                  * (1.0 - smoothstep(22.0, 75.0, positionWS.y));
                 float3 canyonGlow = float3(0.91, 0.61, 0.41) * canyonBand * _NycCanyonBounce * 0.22;
 
-                NycSurface s = NycEvaluatePrewar(cell, positionWS, normalWS, _WorldSpaceCameraPos, p, canyonGlow);
+                NycSurface s;
+                if (input.uv3.y >= 2.5)
+                {
+                    NycCurtainParams cp;
+                    cp.glassTint        = _GlassColor.rgb;
+                    cp.frameTint        = _TrimColor.rgb;
+                    cp.windowWidth      = _WindowWidth;
+                    cp.floorHeight      = _FloorHeight;
+                    cp.mullionThickness = 0.06;
+                    cp.spandrelRatio    = 0.32;
+                    cp.litProbability   = _LitProbability;
+                    cp.warmth           = _Warmth;
+                    cp.reflectivity     = 0.75;
+                    s = NycEvaluateCurtain(cell, positionWS, normalWS, _WorldSpaceCameraPos, cp, canyonGlow);
+                }
+                else
+                {
+                    s = NycEvaluatePrewar(cell, positionWS, normalWS, _WorldSpaceCameraPos, p, canyonGlow);
+                }
 
                 float camDist = distance(positionWS, _WorldSpaceCameraPos);
                 float detailFade = (1.0 - smoothstep(_InteriorFade * 0.7, _InteriorFade, camDist))
@@ -175,8 +193,9 @@ Shader "Nyc/Facade"
                 inputData.bakedGI = SampleSH(bumpedNormal);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - s.roughness);
                 half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, half3(0, 0, 0),
-                                                   s.roughness, s.ao, s.emission, 1.0h);
+                                                   smoothness, s.ao, s.emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

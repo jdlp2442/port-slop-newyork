@@ -145,6 +145,7 @@ namespace Nyc.Generation
                 if (playing) Destroy(root.gameObject); else DestroyImmediate(root.gameObject);
             }
             root = new GameObject("Manhattan").transform;
+            root.gameObject.hideFlags = HideFlags.DontSave;
             root.SetParent(transform, false);
             chunks.Clear();
             CollisionBoxes.Clear();

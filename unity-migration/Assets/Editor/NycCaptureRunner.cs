@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 using Nyc.Core;
 using Nyc.Rendering;
 
@@ -85,7 +86,14 @@ namespace Nyc.EditorTools
             if (!Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
 
             // Ensure city is generated
-            var boot = UnityEngine.Object.FindAnyObjectByType<NycMainBootstrapper>();
+            var builder = UnityEngine.Object.FindAnyObjectByType<Nyc.Generation.ManhattanMeshBuilder>();
+            if (builder && (builder.transform.Find("Manhattan") == null || builder.transform.Find("Manhattan").childCount == 0))
+            {
+                Debug.Log("[NYC Capture] Building Manhattan procedural geometry before capture...");
+                ManhattanBakeMenu.CreateMaterials();
+                builder.Build();
+            }
+
             var lightSys = UnityEngine.Object.FindAnyObjectByType<LightingSystem>();
             var postCtrl = UnityEngine.Object.FindAnyObjectByType<PostProcessingController>();
 
@@ -97,6 +105,10 @@ namespace Nyc.EditorTools
                 cam = camGo.GetComponent<Camera>();
                 if (!cam) cam = camGo.AddComponent<Camera>();
             }
+
+            var camData = cam.GetComponent<UniversalAdditionalCameraData>();
+            if (!camData) camData = cam.gameObject.AddComponent<UniversalAdditionalCameraData>();
+            camData.renderPostProcessing = true;
 
             int width = 1280;
             int height = 720;

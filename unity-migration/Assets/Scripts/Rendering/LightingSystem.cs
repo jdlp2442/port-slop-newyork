@@ -81,6 +81,13 @@ namespace Nyc.Rendering
             _blend = ScriptableObject.CreateInstance<TimeOfDayPreset>();
             _blend.hideFlags = HideFlags.HideAndDontSave;
 
+            if (!skyMaterial)
+            {
+                var s = Shader.Find("Nyc/Sky");
+                if (s) skyMaterial = new Material(s) { name = "SkyProcedural" };
+            }
+            if (skyMaterial) RenderSettings.skybox = skyMaterial;
+
             CacheVolume();
             CachePipeline();
 
@@ -249,6 +256,7 @@ namespace Nyc.Rendering
                 skyMaterial.SetFloat(NycShaderIDs.CloudScale, 0.00018f);
                 skyMaterial.SetFloat(NycShaderIDs.CloudElevation, 0.52f);
                 skyMaterial.SetColor(NycShaderIDs.NightColor, new Color(0.043f, 0.082f, 0.157f, 1f));
+                RenderSettings.skybox = skyMaterial;
             }
 
             PushCityGlobals(p);

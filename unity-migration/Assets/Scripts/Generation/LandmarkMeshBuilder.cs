@@ -60,6 +60,7 @@ namespace Nyc.Generation
             EnsureMaterials();
 
             var rootGo = new GameObject("ManhattanLandmarks");
+            rootGo.hideFlags = HideFlags.DontSave;
             if (parent != null) rootGo.transform.SetParent(parent, false);
             else rootGo.transform.SetParent(transform, false);
             LandmarkRoot = rootGo.transform;

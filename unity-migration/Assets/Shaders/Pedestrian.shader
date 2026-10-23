@@ -84,6 +84,7 @@ Shader "Nyc/Pedestrian"
                 float phase = inst.params.x;
                 float speed = inst.params.y;
                 float scale = max(inst.params.z, 0.01);
+                float seed = inst.params.w;
 
                 // Arms swing opposite to legs.
                 float offset = (abs(part - 3.0) < 0.5 || abs(part - 4.0) < 0.5) ? 3.14159265 : 0.0;
@@ -114,7 +115,65 @@ Shader "Nyc/Pedestrian"
                 output.positionCS = TransformWorldToHClip(world);
                 output.positionWS = world;
                 output.normalWS = n;
-                output.color = inst.tint;
+
+                // --- Multiverse Palette Assignment by Part ---
+                float s1 = frac(seed * 7.13 + 0.17);
+                float s2 = frac(seed * 13.31 + 0.53);
+                float s3 = frac(seed * 19.79 + 0.81);
+
+                // Diverse NYC skin tones
+                float3 skinTones[6] = {
+                    float3(0.92, 0.78, 0.68), // Fair peach
+                    float3(0.86, 0.70, 0.56), // Warm beige
+                    float3(0.74, 0.58, 0.44), // Olive tan
+                    float3(0.58, 0.42, 0.30), // Warm bronze
+                    float3(0.38, 0.25, 0.17), // Deep brown
+                    float3(0.24, 0.16, 0.11)  // Espresso
+                };
+                float3 skin = skinTones[min((int)(s1 * 6.0), 5)];
+
+                // Hair tones
+                float3 hairTones[5] = {
+                    float3(0.08, 0.08, 0.09), // Black
+                    float3(0.20, 0.13, 0.08), // Dark brown
+                    float3(0.74, 0.62, 0.38), // Blonde
+                    float3(0.36, 0.18, 0.10), // Chestnut
+                    float3(0.52, 0.52, 0.55)  // Grey
+                };
+                float3 hair = hairTones[min((int)(s2 * 5.0), 4)];
+
+                // Pants tones (jeans, chinos, dark trousers)
+                float3 pantsTones[6] = {
+                    float3(0.14, 0.22, 0.38), // Blue denim
+                    float3(0.09, 0.12, 0.22), // Dark wash
+                    float3(0.60, 0.54, 0.42), // Khaki chino
+                    float3(0.16, 0.16, 0.18), // Charcoal slacks
+                    float3(0.07, 0.07, 0.08), // Black jeans
+                    float3(0.44, 0.45, 0.48)  // Grey trousers
+                };
+                float3 pants = pantsTones[min((int)(s3 * 6.0), 5)];
+                float3 shoes = (s1 > 0.5) ? float3(0.85, 0.85, 0.85) : float3(0.10, 0.10, 0.12);
+
+                float4 vertexCol = inst.tint; // Part 0: Torso jacket/coat/shirt
+
+                if (abs(part - 1.0) < 0.5) // Part 1: Head
+                {
+                    // Hair on top crown and sides; skin on face/neck
+                    bool isHair = (input.positionOS.y > 1.66) || (input.positionOS.y > 1.62 && input.normalOS.y > 0.3);
+                    vertexCol = float4(isHair ? hair : skin, 1.0);
+                }
+                else if (part > 1.5 && part < 3.5) // Parts 2 & 3: Arms
+                {
+                    // Upper 72% sleeve matches coat/jacket; lower 28% is bare hand/wrist
+                    vertexCol = (t > 0.72) ? float4(skin, 1.0) : inst.tint;
+                }
+                else if (part > 3.5) // Parts 4 & 5: Legs
+                {
+                    // Upper 82% pants; lower 18% shoes
+                    vertexCol = (t > 0.82) ? float4(shoes, 1.0) : float4(pants, 1.0);
+                }
+
+                output.color = vertexCol;
                 output.fogCoord = ComputeFogFactor(output.positionCS.z);
                 return output;
             }
@@ -127,8 +186,15 @@ Shader "Nyc/Pedestrian"
                 float ndl = saturate(dot(normalWS, mainLight.direction));
                 float shadow = mainLight.shadowAttenuation;
 
-                float3 ambient = SampleSH(normalWS) * _AmbientBoost;
-                float3 col = input.color.rgb * (mainLight.color * ndl * shadow + ambient);
+                // Rich hemisphere ambient fill so characters are never pitch-black
+                float3 skyFill = lerp(_NycSkyHorizonColor.rgb, _NycSkyTopColor.rgb, 0.40) * 0.42;
+                float3 groundFill = float3(0.20, 0.20, 0.22) * 0.35;
+                float hemi = normalWS.y * 0.5 + 0.5;
+                float3 ambient = lerp(groundFill, skyFill, hemi) * _AmbientBoost + SampleSH(normalWS) * 0.35;
+                ambient = max(ambient, float3(0.24, 0.24, 0.26));
+
+                float3 lighting = mainLight.color * ndl * shadow + ambient;
+                float3 col = input.color.rgb * lighting;
 
                 col = MixFog(col, input.fogCoord);
                 return half4(col, 1.0);

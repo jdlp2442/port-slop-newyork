@@ -205,9 +205,11 @@ namespace Nyc.Gameplay
             torsoGo.transform.localPosition = new Vector3(0f, 0.95f, 0f);
             vis.torso = torsoGo.transform;
 
-            Material shirtMat = CreateMaterial("PedestrianShirt", new Color(0.18f, 0.35f, 0.65f));
-            Material skinMat = CreateMaterial("PedestrianSkin", new Color(0.85f, 0.68f, 0.55f));
-            Material pantsMat = CreateMaterial("PedestrianPants", new Color(0.15f, 0.17f, 0.22f));
+            Material shirtMat = CreateMaterial("PedestrianShirt", new Color(0.18f, 0.42f, 0.76f), 0.35f, 0.0f);
+            Material skinMat  = CreateMaterial("PedestrianSkin", new Color(0.88f, 0.72f, 0.58f), 0.30f, 0.0f);
+            Material hairMat  = CreateMaterial("PedestrianHair", new Color(0.12f, 0.10f, 0.09f), 0.20f, 0.0f);
+            Material pantsMat = CreateMaterial("PedestrianPants", new Color(0.14f, 0.22f, 0.38f), 0.35f, 0.0f);
+            Material shoeMat  = CreateMaterial("PedestrianShoe", new Color(0.85f, 0.85f, 0.85f), 0.40f, 0.0f);
 
             // Torso mesh (jacket / shirt)
             AddMeshChild(torsoGo, "TorsoMesh", CreateBoxMesh(0.36f, 0.52f, 0.22f), shirtMat);
@@ -218,38 +220,48 @@ namespace Nyc.Gameplay
             headGo.transform.localPosition = new Vector3(0f, 0.38f, 0f);
             vis.head = headGo.transform;
             AddMeshChild(headGo, "HeadMesh", CreateBoxMesh(0.20f, 0.24f, 0.22f), skinMat);
+            var hairGo = AddMeshChild(headGo, "HairMesh", CreateBoxMesh(0.22f, 0.09f, 0.23f), hairMat);
+            hairGo.transform.localPosition = new Vector3(0f, 0.10f, -0.01f);
 
-            // Left Arm
+            // Left Arm (Sleeve + Hand)
             var leftArmGo = new GameObject("LeftArm");
             leftArmGo.transform.SetParent(torsoGo.transform, false);
             leftArmGo.transform.localPosition = new Vector3(-0.24f, 0.18f, 0f);
             vis.leftArm = leftArmGo.transform;
-            var lArmMesh = AddMeshChild(leftArmGo, "Mesh", CreateBoxMesh(0.11f, 0.54f, 0.12f), shirtMat);
-            lArmMesh.transform.localPosition = new Vector3(0f, -0.24f, 0f);
+            var lArmMesh = AddMeshChild(leftArmGo, "Sleeve", CreateBoxMesh(0.11f, 0.42f, 0.12f), shirtMat);
+            lArmMesh.transform.localPosition = new Vector3(0f, -0.18f, 0f);
+            var lHandMesh = AddMeshChild(leftArmGo, "Hand", CreateBoxMesh(0.09f, 0.12f, 0.10f), skinMat);
+            lHandMesh.transform.localPosition = new Vector3(0f, -0.42f, 0f);
 
-            // Right Arm
+            // Right Arm (Sleeve + Hand)
             var rightArmGo = new GameObject("RightArm");
             rightArmGo.transform.SetParent(torsoGo.transform, false);
             rightArmGo.transform.localPosition = new Vector3(0.24f, 0.18f, 0f);
             vis.rightArm = rightArmGo.transform;
-            var rArmMesh = AddMeshChild(rightArmGo, "Mesh", CreateBoxMesh(0.11f, 0.54f, 0.12f), shirtMat);
-            rArmMesh.transform.localPosition = new Vector3(0f, -0.24f, 0f);
+            var rArmMesh = AddMeshChild(rightArmGo, "Sleeve", CreateBoxMesh(0.11f, 0.42f, 0.12f), shirtMat);
+            rArmMesh.transform.localPosition = new Vector3(0f, -0.18f, 0f);
+            var rHandMesh = AddMeshChild(rightArmGo, "Hand", CreateBoxMesh(0.09f, 0.12f, 0.10f), skinMat);
+            rHandMesh.transform.localPosition = new Vector3(0f, -0.42f, 0f);
 
-            // Left Leg
+            // Left Leg (Pants + Shoe)
             var leftLegGo = new GameObject("LeftLeg");
             leftLegGo.transform.SetParent(root.transform, false);
             leftLegGo.transform.localPosition = new Vector3(-0.11f, 0.72f, 0f);
             vis.leftLeg = leftLegGo.transform;
-            var lLegMesh = AddMeshChild(leftLegGo, "Mesh", CreateBoxMesh(0.14f, 0.72f, 0.15f), pantsMat);
-            lLegMesh.transform.localPosition = new Vector3(0f, -0.34f, 0f);
+            var lLegMesh = AddMeshChild(leftLegGo, "Pants", CreateBoxMesh(0.14f, 0.58f, 0.15f), pantsMat);
+            lLegMesh.transform.localPosition = new Vector3(0f, -0.27f, 0f);
+            var lShoeMesh = AddMeshChild(leftLegGo, "Shoe", CreateBoxMesh(0.14f, 0.14f, 0.20f), shoeMat);
+            lShoeMesh.transform.localPosition = new Vector3(0f, -0.61f, -0.02f);
 
-            // Right Leg
+            // Right Leg (Pants + Shoe)
             var rightLegGo = new GameObject("RightLeg");
             rightLegGo.transform.SetParent(root.transform, false);
             rightLegGo.transform.localPosition = new Vector3(0.11f, 0.72f, 0f);
             vis.rightLeg = rightLegGo.transform;
-            var rLegMesh = AddMeshChild(rightLegGo, "Mesh", CreateBoxMesh(0.14f, 0.72f, 0.15f), pantsMat);
-            rLegMesh.transform.localPosition = new Vector3(0f, -0.34f, 0f);
+            var rLegMesh = AddMeshChild(rightLegGo, "Pants", CreateBoxMesh(0.14f, 0.58f, 0.15f), pantsMat);
+            rLegMesh.transform.localPosition = new Vector3(0f, -0.27f, 0f);
+            var rShoeMesh = AddMeshChild(rightLegGo, "Shoe", CreateBoxMesh(0.14f, 0.14f, 0.20f), shoeMat);
+            rShoeMesh.transform.localPosition = new Vector3(0f, -0.61f, -0.02f);
         }
 
         // =========================================================================================
@@ -342,18 +354,48 @@ namespace Nyc.Gameplay
             chassisGo.transform.SetParent(root.transform, false);
             vis.chassisRoot = chassisGo.transform;
 
-            Material paintMat = CreateMaterial("CarPaint", isTaxi ? new Color(1.0f, 0.75f, 0.08f) : new Color(0.85f, 0.12f, 0.15f));
-            Material glassMat = CreateMaterial("CarGlass", new Color(0.12f, 0.16f, 0.22f));
-            Material wheelMat = CreateMaterial("CarWheel", new Color(0.15f, 0.15f, 0.16f));
+            Material paintMat = CreateMaterial("CarPaint", isTaxi ? new Color(1.0f, 0.745f, 0.08f) : new Color(0.85f, 0.12f, 0.15f), 0.85f, 0.25f);
+            Material glassMat = CreateMaterial("CarGlass", new Color(0.06f, 0.08f, 0.11f), 0.95f, 0.10f);
+            Material wheelMat = CreateMaterial("CarWheel", new Color(0.12f, 0.12f, 0.14f), 0.25f, 0.0f);
+            Material trimMat  = CreateMaterial("CarTrim", new Color(0.20f, 0.20f, 0.22f), 0.70f, 0.30f);
+            Material headlightMat = CreateMaterial("CarHeadlight", new Color(1.0f, 0.96f, 0.88f), 0.9f, 0f, new Color(2.5f, 2.3f, 1.8f));
+            Material taillightMat = CreateMaterial("CarTaillight", new Color(0.85f, 0.06f, 0.04f), 0.8f, 0f, new Color(2.0f, 0.15f, 0.1f));
 
-            // Lofted car body
+            // Sculpted aerodynamic car body & raked cabin
             AddMeshChild(chassisGo, "CarBody", CreateCarBodyMesh(isTaxi), paintMat);
             AddMeshChild(chassisGo, "CarCabin", CreateCarCabinMesh(), glassMat);
 
+            // Front and rear bumpers
+            AddMeshChild(chassisGo, "BumperFront", CreateBoxMesh(1.72f, 0.26f, 0.16f), trimMat)
+                .transform.localPosition = new Vector3(0f, 0.45f, -2.18f);
+            AddMeshChild(chassisGo, "BumperRear", CreateBoxMesh(1.72f, 0.28f, 0.16f), trimMat)
+                .transform.localPosition = new Vector3(0f, 0.48f, 2.18f);
+
+            // Front Headlights
+            AddMeshChild(chassisGo, "Headlight_L", CreateBoxMesh(0.28f, 0.11f, 0.04f), headlightMat)
+                .transform.localPosition = new Vector3(-0.60f, 0.65f, -2.19f);
+            AddMeshChild(chassisGo, "Headlight_R", CreateBoxMesh(0.28f, 0.11f, 0.04f), headlightMat)
+                .transform.localPosition = new Vector3(0.60f, 0.65f, -2.19f);
+
+            // Rear Taillights
+            AddMeshChild(chassisGo, "Taillight_L", CreateBoxMesh(0.28f, 0.10f, 0.04f), taillightMat)
+                .transform.localPosition = new Vector3(-0.60f, 0.70f, 2.19f);
+            AddMeshChild(chassisGo, "Taillight_R", CreateBoxMesh(0.28f, 0.10f, 0.04f), taillightMat)
+                .transform.localPosition = new Vector3(0.60f, 0.70f, 2.19f);
+
+            // Side Mirrors
+            AddMeshChild(chassisGo, "Mirror_L", CreateBoxMesh(0.14f, 0.08f, 0.10f), paintMat)
+                .transform.localPosition = new Vector3(-0.95f, 0.86f, -0.72f);
+            AddMeshChild(chassisGo, "Mirror_R", CreateBoxMesh(0.14f, 0.08f, 0.10f), paintMat)
+                .transform.localPosition = new Vector3(0.95f, 0.86f, -0.72f);
+
             if (isTaxi)
             {
-                var signGo = AddMeshChild(chassisGo, "TaxiSign", CreateBoxMesh(0.48f, 0.14f, 0.24f), glassMat);
-                signGo.transform.localPosition = new Vector3(0f, 1.48f, 0.1f);
+                Material taxiSignMat = CreateMaterial("TaxiSignMat", new Color(1.0f, 0.82f, 0.15f), 0.85f, 0f, new Color(1.6f, 1.3f, 0.25f));
+                var signMount = AddMeshChild(chassisGo, "TaxiSignMount", CreateBoxMesh(0.62f, 0.04f, 0.24f), trimMat);
+                signMount.transform.localPosition = new Vector3(0f, 1.44f, 0.12f);
+                var signGo = AddMeshChild(chassisGo, "TaxiSign", CreateBoxMesh(0.54f, 0.14f, 0.20f), taxiSignMat);
+                signGo.transform.localPosition = new Vector3(0f, 1.53f, 0.12f);
             }
 
             // 4 Wheels
@@ -465,7 +507,7 @@ namespace Nyc.Gameplay
             var u = new List<Vector2>();
             var t = new List<int>();
 
-            int segments = 12;
+            int segments = 16;
             float hw = width * 0.5f;
 
             for (int i = 0; i < segments; i++)
@@ -478,6 +520,7 @@ namespace Nyc.Gameplay
                 float y1 = Mathf.Sin(a1) * radius;
                 float z1 = Mathf.Cos(a1) * radius;
 
+                // Tyre tread outer quad
                 int baseIdx = v.Count;
                 v.Add(new Vector3(-hw, y0, z0));
                 v.Add(new Vector3(hw, y0, z0));
@@ -491,6 +534,28 @@ namespace Nyc.Gameplay
 
                 t.Add(baseIdx); t.Add(baseIdx + 1); t.Add(baseIdx + 2);
                 t.Add(baseIdx); t.Add(baseIdx + 2); t.Add(baseIdx + 3);
+
+                // Outer sidewall / hubcap disc (facing +X)
+                int capIdx = v.Count;
+                v.Add(new Vector3(hw, 0f, 0f));
+                v.Add(new Vector3(hw, y0, z0));
+                v.Add(new Vector3(hw, y1, z1));
+                n.Add(Vector3.right); n.Add(Vector3.right); n.Add(Vector3.right);
+                u.Add(new Vector2(0.5f, 0.5f));
+                u.Add(new Vector2(y0 / radius * 0.5f + 0.5f, z0 / radius * 0.5f + 0.5f));
+                u.Add(new Vector2(y1 / radius * 0.5f + 0.5f, z1 / radius * 0.5f + 0.5f));
+                t.Add(capIdx); t.Add(capIdx + 1); t.Add(capIdx + 2);
+
+                // Inner sidewall disc (facing -X)
+                int inIdx = v.Count;
+                v.Add(new Vector3(-hw, 0f, 0f));
+                v.Add(new Vector3(-hw, y1, z1));
+                v.Add(new Vector3(-hw, y0, z0));
+                n.Add(Vector3.left); n.Add(Vector3.left); n.Add(Vector3.left);
+                u.Add(new Vector2(0.5f, 0.5f));
+                u.Add(new Vector2(y1 / radius * 0.5f + 0.5f, z1 / radius * 0.5f + 0.5f));
+                u.Add(new Vector2(y0 / radius * 0.5f + 0.5f, z0 / radius * 0.5f + 0.5f));
+                t.Add(inIdx); t.Add(inIdx + 1); t.Add(inIdx + 2);
             }
 
             mesh.SetVertices(v);
@@ -558,14 +623,17 @@ namespace Nyc.Gameplay
             var t = new List<int>();
 
             float w = 1.82f;
-            float hw = w * 0.5f;
 
-            // Hood (-Z is front)
-            AddLoftBox(v, n, u, t, new Vector3(0f, 0.65f, -1.35f), new Vector3(w, 0.45f, 1.4f));
-            // Lower cabin base
-            AddLoftBox(v, n, u, t, new Vector3(0f, 0.62f, 0.15f), new Vector3(w, 0.48f, 1.7f));
-            // Trunk / rear deck
-            AddLoftBox(v, n, u, t, new Vector3(0f, 0.68f, 1.55f), new Vector3(w, 0.50f, 1.2f));
+            // Lower rocker sills & main chassis
+            AddLoftBox(v, n, u, t, new Vector3(0f, 0.46f, 0f), new Vector3(w, 0.36f, 4.30f));
+
+            // Hood: slopes down from cowl (z = -0.85, y = 0.72) to nose (z = -2.15, y = 0.60)
+            AddFrustumMesh(v, n, u, t,
+                new Vector3(0f, 0.72f, -0.85f), new Vector3(w * 0.96f, 0.16f, 0f),
+                new Vector3(0f, 0.60f, -2.15f), new Vector3(w * 0.88f, 0.18f, 0f));
+
+            // Trunk / rear deck (z = 0.95 to 2.15)
+            AddLoftBox(v, n, u, t, new Vector3(0f, 0.70f, 1.55f), new Vector3(w * 0.92f, 0.16f, 1.20f));
 
             mesh.SetVertices(v);
             mesh.SetNormals(n);
@@ -583,8 +651,20 @@ namespace Nyc.Gameplay
             var u = new List<Vector2>();
             var t = new List<int>();
 
-            // Aerodynamic greenhouse cabin
-            AddLoftBox(v, n, u, t, new Vector3(0f, 1.15f, 0.12f), new Vector3(1.52f, 0.56f, 1.85f));
+            float w = 1.82f;
+            // Aerodynamic greenhouse cabin:
+            // Raked windshield: cowl (z = -0.85, y = 0.72) up to roof (z = -0.05, y = 1.40)
+            AddFrustumMesh(v, n, u, t,
+                new Vector3(0f, 0.72f, -0.85f), new Vector3(w * 0.88f, 0.05f, 0f),
+                new Vector3(0f, 1.40f, -0.05f), new Vector3(w * 0.72f, 0.05f, 0f));
+
+            // Cabin center block
+            AddLoftBox(v, n, u, t, new Vector3(0f, 1.06f, 0.45f), new Vector3(w * 0.76f, 0.68f, 1.00f));
+
+            // Raked rear backlight: roof (z = 0.95, y = 1.40) down to deck (z = 1.55, y = 0.72)
+            AddFrustumMesh(v, n, u, t,
+                new Vector3(0f, 1.40f, 0.95f), new Vector3(w * 0.72f, 0.05f, 0f),
+                new Vector3(0f, 0.72f, 1.55f), new Vector3(w * 0.86f, 0.05f, 0f));
 
             mesh.SetVertices(v);
             mesh.SetNormals(n);
@@ -742,6 +822,46 @@ namespace Nyc.Gameplay
             Quad(new Vector3(hw, -hh, -hl), new Vector3(hw, -hh, hl), new Vector3(hw, hh, hl), new Vector3(hw, hh, -hl), Vector3.right);
         }
 
+        static void AddFrustumMesh(List<Vector3> v, List<Vector3> n, List<Vector2> u, List<int> t,
+                                  Vector3 centerBack, Vector3 sizeBack, Vector3 centerFront, Vector3 sizeFront)
+        {
+            float hbW = sizeBack.x * 0.5f, hbH = sizeBack.y * 0.5f;
+            float hfW = sizeFront.x * 0.5f, hfH = sizeFront.y * 0.5f;
+
+            Vector3 bL = centerBack + new Vector3(-hbW, -hbH, 0f);
+            Vector3 bR = centerBack + new Vector3(hbW, -hbH, 0f);
+            Vector3 tL = centerBack + new Vector3(-hbW, hbH, 0f);
+            Vector3 tR = centerBack + new Vector3(hbW, hbH, 0f);
+
+            Vector3 fbL = centerFront + new Vector3(-hfW, -hfH, 0f);
+            Vector3 fbR = centerFront + new Vector3(hfW, -hfH, 0f);
+            Vector3 ftL = centerFront + new Vector3(-hfW, hfH, 0f);
+            Vector3 ftR = centerFront + new Vector3(hfW, hfH, 0f);
+
+            void Quad(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 norm)
+            {
+                int b = v.Count;
+                v.Add(p0); v.Add(p1); v.Add(p2); v.Add(p3);
+                n.Add(norm); n.Add(norm); n.Add(norm); n.Add(norm);
+                u.Add(new Vector2(0, 0)); u.Add(new Vector2(1, 0));
+                u.Add(new Vector2(1, 1)); u.Add(new Vector2(0, 1));
+                t.Add(b); t.Add(b + 1); t.Add(b + 2);
+                t.Add(b); t.Add(b + 2); t.Add(b + 3);
+            }
+
+            Vector3 nTop = Vector3.Cross(ftR - tR, tL - tR).normalized;
+            Quad(tL, tR, ftR, ftL, nTop);
+
+            Vector3 nBottom = Vector3.Cross(bL - bR, fbR - bR).normalized;
+            Quad(bL, fbL, fbR, bR, nBottom);
+
+            Vector3 nLeft = Vector3.Cross(ftL - tL, bL - tL).normalized;
+            Quad(tL, ftL, fbL, bL, nLeft);
+
+            Vector3 nRight = Vector3.Cross(bR - tR, ftR - tR).normalized;
+            Quad(tR, bR, fbR, ftR, nRight);
+        }
+
         static GameObject AddMeshChild(GameObject parent, string name, Mesh mesh, Material material)
         {
             var go = new GameObject(name);
@@ -765,12 +885,19 @@ namespace Nyc.Gameplay
             return go.transform;
         }
 
-        static Material CreateMaterial(string name, Color color)
+        static Material CreateMaterial(string name, Color color, float smoothness = 0.5f, float metallic = 0.0f, Color? emission = null)
         {
             Shader shader = Shader.Find("Universal Render Pipeline/Lit");
             if (!shader) shader = Shader.Find("Nyc/VehiclePaint");
             var mat = new Material(shader) { name = name };
             mat.SetColor("_BaseColor", color);
+            mat.SetFloat("_Smoothness", smoothness);
+            mat.SetFloat("_Metallic", metallic);
+            if (emission.HasValue && (emission.Value.r > 0.01f || emission.Value.g > 0.01f || emission.Value.b > 0.01f))
+            {
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", emission.Value);
+            }
             return mat;
         }
 

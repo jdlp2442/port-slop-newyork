@@ -32,7 +32,7 @@ namespace Nyc.Generation
         public float lineWidth = 0.14f;
         public float dashPeriod = 9f;
         [Range(0.05f, 1f)] public float dashDuty = 0.35f;
-        public float surfaceY = 0.045f;
+        public float surfaceY = 0.055f;
         public float crosswalkBarWidth = 0.55f;
         public float crosswalkBarLength = 2.6f;
         public float crosswalkGap = 1.2f;
@@ -83,6 +83,11 @@ namespace Nyc.Generation
             mf.sharedMesh = mesh;
 
             var mr = GetComponent<MeshRenderer>();
+            if (!paintMaterial)
+            {
+                var s = Shader.Find("Nyc/RoadPaint");
+                if (s) paintMaterial = new Material(s) { name = "RoadPaintFallback" };
+            }
             if (paintMaterial) mr.sharedMaterial = paintMaterial;
             mr.shadowCastingMode = ShadowCastingMode.Off;
             mr.receiveShadows = true;

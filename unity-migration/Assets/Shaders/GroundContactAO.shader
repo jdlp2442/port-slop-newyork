@@ -32,14 +32,6 @@ Shader "Hidden/Nyc/GroundContactAO"
                 float4 _AOParams;   // x: intensity, y: radius, z: bias, w: maxDistance
             CBUFFER_END
 
-            // Pseudo-random rotation hash per pixel
-            float2 Hash2(float2 p)
-            {
-                float3 p3 = frac(float3(p.xyx) * float3(443.897, 441.423, 437.195));
-                p3 += dot(p3, p3.yzx + 19.19);
-                return frac((p3.xx + p3.yz) * p3.zy);
-            }
-
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -61,31 +53,41 @@ Shader "Hidden/Nyc/GroundContactAO"
 
                 float3 centerWS = ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
 
-                // Near-ground enhancement: contact shadow strongest near Y = 0 (roads/asphalt) and sidewalks
-                float groundWeight = saturate(1.0 - abs(centerWS.y) * 0.25);
+                // Strictly contact shadow near ground (y between -0.30 and 0.22).
+                // Sky, upper buildings, facades and upper vehicles are completely unaffected (0 noise).
+                if (centerWS.y > 0.22 || centerWS.y < -0.30)
+                {
+                    return sceneColor;
+                }
 
-                float intensity = _AOParams.x * (0.45 + 0.55 * groundWeight);
+                float groundWeight = smoothstep(0.22, 0.0, centerWS.y);
+                float intensity = _AOParams.x * groundWeight;
+                if (intensity <= 0.001)
+                {
+                    return sceneColor;
+                }
+
                 float radiusWS = _AOParams.y;
                 float bias = _AOParams.z;
 
                 // Screen-space sample radius scaled inversely by depth
                 float2 screenRadius = (radiusWS / max(linearDepth, 0.5)) * float2(1.0, _ScreenParams.x / _ScreenParams.y);
-                screenRadius = clamp(screenRadius, 0.001, 0.04);
+                screenRadius = clamp(screenRadius, 0.001, 0.035);
 
-                float2 rand = Hash2(uv * _ScreenParams.xy);
-                float angle = rand.x * 6.2831853;
-                float2x2 rot = float2x2(cos(angle), -sin(angle), sin(angle), cos(angle));
+                // Deterministic, smooth 8-point sampling pattern - NO stochastic per-pixel noise
+                const int SAMPLES = 8;
+                const float2 SAMPLE_OFFSETS[8] = {
+                    float2( 0.35,  0.15), float2(-0.25,  0.40), float2(-0.45, -0.20),
+                    float2( 0.20, -0.45), float2( 0.65, -0.15), float2(-0.10,  0.65),
+                    float2(-0.65,  0.25), float2( 0.40,  0.55)
+                };
 
                 float occlusion = 0.0;
-                const int SAMPLES = 6;
-                const float2 SAMPLE_OFFSETS[6] = {
-                    float2(0.5, 0.2), float2(-0.4, 0.6), float2(-0.6, -0.3),
-                    float2(0.3, -0.7), float2(0.8, -0.2), float2(-0.1, 0.9)
-                };
+                float totalWeight = 0.0;
 
                 for (int i = 0; i < SAMPLES; i++)
                 {
-                    float2 offset = mul(rot, SAMPLE_OFFSETS[i]) * screenRadius;
+                    float2 offset = SAMPLE_OFFSETS[i] * screenRadius;
                     float2 sampleUV = clamp(uv + offset, 0.001, 0.999);
 
                     #if UNITY_REVERSED_Z
@@ -98,19 +100,21 @@ Shader "Hidden/Nyc/GroundContactAO"
                     float3 diff = sWS - centerWS;
                     float dist = length(diff);
 
-                    // Occlusion factor if the neighbor is closer to camera and within contact sphere
-                    if (dist > bias && dist < radiusWS)
+                    // Depth-aware bilateral weight: only occlude if sample is on the same ground plane/contact geometry
+                    float depthDiff = abs(sWS.y - centerWS.y);
+                    if (dist > bias && dist < radiusWS && depthDiff < 0.6)
                     {
                         float horizonAngle = max(0.0, diff.y / dist);
-                        float rangeFalloff = 1.0 - (dist / radiusWS);
-                        occlusion += horizonAngle * rangeFalloff;
+                        float rangeFalloff = smoothstep(radiusWS, bias, dist);
+                        float bilateralWeight = smoothstep(0.6, 0.0, depthDiff);
+                        occlusion += horizonAngle * rangeFalloff * bilateralWeight;
                     }
+                    totalWeight += 1.0;
                 }
 
-                occlusion = saturate((occlusion / float(SAMPLES)) * intensity * 2.2);
+                occlusion = saturate((occlusion / totalWeight) * intensity * 2.0);
                 float aoFactor = 1.0 - occlusion;
 
-                // Modulate ambient darkness without tinting bright emissives
                 float3 result = sceneColor.rgb * aoFactor;
                 return float4(result, sceneColor.a);
             }

@@ -42,6 +42,7 @@ namespace Nyc.Gameplay.Pedestrians
             public float Speed;
             public float Phase;
             public float Scale;
+            public float Seed;
             public Vector4 Tint;
         }
 
@@ -54,14 +55,22 @@ namespace Nyc.Gameplay.Pedestrians
 
         static readonly Vector4[] Palette =
         {
-            new Vector4(0.16f, 0.18f, 0.22f, 1f),
-            new Vector4(0.35f, 0.22f, 0.18f, 1f),
-            new Vector4(0.55f, 0.50f, 0.42f, 1f),
-            new Vector4(0.22f, 0.30f, 0.24f, 1f),
-            new Vector4(0.62f, 0.20f, 0.18f, 1f),
-            new Vector4(0.20f, 0.26f, 0.38f, 1f),
-            new Vector4(0.72f, 0.68f, 0.60f, 1f),
-            new Vector4(0.12f, 0.12f, 0.13f, 1f)
+            new Vector4(0.92f, 0.72f, 0.12f, 1f), // NYC Yellow
+            new Vector4(0.78f, 0.18f, 0.16f, 1f), // Crimson red
+            new Vector4(0.18f, 0.42f, 0.76f, 1f), // Royal blue
+            new Vector4(0.24f, 0.52f, 0.35f, 1f), // Emerald green
+            new Vector4(0.85f, 0.55f, 0.22f, 1f), // Tan/camel coat
+            new Vector4(0.88f, 0.88f, 0.86f, 1f), // Light puffer
+            new Vector4(0.35f, 0.28f, 0.45f, 1f), // Purple/plum
+            new Vector4(0.72f, 0.68f, 0.58f, 1f), // Trench coat
+            new Vector4(0.20f, 0.28f, 0.38f, 1f), // Navy jacket
+            new Vector4(0.55f, 0.52f, 0.48f, 1f), // Heather grey
+            new Vector4(0.16f, 0.18f, 0.20f, 1f), // Charcoal coat
+            new Vector4(0.82f, 0.38f, 0.24f, 1f), // Terracotta
+            new Vector4(0.28f, 0.62f, 0.68f, 1f), // Teal parka
+            new Vector4(0.64f, 0.22f, 0.38f, 1f), // Berry
+            new Vector4(0.48f, 0.58f, 0.32f, 1f), // Olive jacket
+            new Vector4(0.32f, 0.34f, 0.38f, 1f)  // Slate
         };
 
         Mesh _mesh;
@@ -141,7 +150,7 @@ namespace Nyc.Gameplay.Pedestrians
                 _data[i] = new PedInstance
                 {
                     PosHeading = new Vector4(pos.x, CityFrame.SidewalkHeight, -pos.y, -heading),
-                    Params = new Vector4(w.Phase, w.Speed, w.Scale, 0f),
+                    Params = new Vector4(w.Phase, w.Speed, w.Scale, w.Seed),
                     Tint = w.Tint
                 };
             }
@@ -198,6 +207,7 @@ namespace Nyc.Gameplay.Pedestrians
                         Speed = 1.05f + (float)_rng.NextDouble() * 0.65f,
                         Phase = (float)_rng.NextDouble() * Mathf.PI * 2f,
                         Scale = 0.92f + (float)_rng.NextDouble() * 0.16f,
+                        Seed = (float)_rng.NextDouble(),
                         Tint = Palette[_rng.Next(0, Palette.Length)]
                     };
                 }

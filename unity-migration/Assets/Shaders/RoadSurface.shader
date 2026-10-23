@@ -105,9 +105,9 @@ Shader "Nyc/RoadSurface"
                 float waterFresnel = NycWaterFresnel(viewDir);
 
                 // --- albedo ------------------------------------------------------------------
-                float microAggregate = lerp(0.5, NycNoise2D(float2(wx * 16.0, wz * 16.0)),
-                                            smoothstep(0.06, 0.02, pixelSize));
-                float fineGrain = lerp(0.5, NycNoise2D(float2(wx * 3.2, wz * 3.2)),
+                float microAggregate = lerp(0.5, NycNoise2D(float2(wx * 8.0, wz * 8.0)),
+                                            smoothstep(0.08, 0.02, pixelSize));
+                float fineGrain = lerp(0.5, NycNoise2D(float2(wx * 2.4, wz * 2.4)),
                                        smoothstep(0.4, 0.12, pixelSize));
                 float patchNoise = NycNoise2D(float2(wx * 0.18, wz * 0.18));
                 float oilyStain = smoothstep(0.52, 0.84, NycNoise2D(float2(wx * 0.42, wz * 0.42))) * detail;
@@ -128,7 +128,7 @@ Shader "Nyc/RoadSurface"
                 float3 albedo = lerp(baseAsphalt, _ManholeColor.rgb * mhRings, isManhole) * wetDarkening;
 
                 // --- roughness / metalness ---------------------------------------------------
-                float microRough = lerp(0.04, NycNoise2D(positionWS.xz * 12.0) * 0.08,
+                float microRough = lerp(0.04, NycNoise2D(positionWS.xz * 8.0) * 0.05,
                                         smoothstep(0.08, 0.03, pixelSize));
                 float wetRough = lerp(0.90 + microRough, 0.38, max(film * 0.9, damp * 0.8));
                 float roughness = lerp(wetRough, 0.10, puddle);
@@ -138,8 +138,8 @@ Shader "Nyc/RoadSurface"
                 // --- normal ------------------------------------------------------------------
                 float coarseFade = smoothstep(0.08, 0.025, pixelSize);
                 float fineFade = smoothstep(0.02, 0.006, pixelSize) * (1.0 - film * 0.6);
-                float coarseGrit = (NycNoise2D(float2(wx * 8.5, wz * 8.5)) - 0.5) * 0.0032 * coarseFade;
-                float fineGrit = (NycNoise2D(float2(wx * 36.0, wz * 36.0)) - 0.5) * 0.0016 * fineFade;
+                float coarseGrit = (NycNoise2D(float2(wx * 6.5, wz * 6.5)) - 0.5) * 0.0020 * coarseFade;
+                float fineGrit = (NycNoise2D(float2(wx * 18.0, wz * 18.0)) - 0.5) * 0.0008 * fineFade;
                 float height = (coarseGrit + fineGrit) * (1.0 - puddle) * _BumpScale;
                 float3 bumpedNormal = NycBumpNormal(height, positionWS, normalWS);
 
@@ -162,8 +162,9 @@ Shader "Nyc/RoadSurface"
                 inputData.bakedGI = SampleSH(bumpedNormal);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - roughness);
                 half4 color = UniversalFragmentPBR(inputData, albedo, metallic, half3(0, 0, 0),
-                                                   roughness, NycCanyonAO(positionWS), emission, 1.0h);
+                                                   smoothness, NycCanyonAO(positionWS), emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

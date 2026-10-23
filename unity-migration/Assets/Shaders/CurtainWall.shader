@@ -155,8 +155,9 @@ Shader "Nyc/CurtainWall"
                 inputData.bakedGI = SampleSH(bumpedNormal);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - s.roughness);
                 half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, half3(0, 0, 0),
-                                                   s.roughness, s.ao, s.emission, 1.0h);
+                                                   smoothness, s.ao, s.emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

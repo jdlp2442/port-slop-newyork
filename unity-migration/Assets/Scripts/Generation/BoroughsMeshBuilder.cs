@@ -44,6 +44,7 @@ namespace Nyc.Generation
             EnsureMaterials();
 
             var rootGo = new GameObject("BoroughsAndHarbor");
+            rootGo.hideFlags = HideFlags.DontSave;
             if (parent != null) rootGo.transform.SetParent(parent, false);
             else rootGo.transform.SetParent(transform, false);
             BoroughsRoot = rootGo.transform;

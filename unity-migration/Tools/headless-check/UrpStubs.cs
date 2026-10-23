@@ -9,7 +9,7 @@ namespace UnityEngine
         public static T CreateInstance<T>() where T : ScriptableObject => null;
     }
 
-    public enum HideFlags { None, HideAndDontSave }
+    public enum HideFlags { None, HideAndDontSave, DontSave }
 
     public class CreateAssetMenuAttribute : Attribute
     {

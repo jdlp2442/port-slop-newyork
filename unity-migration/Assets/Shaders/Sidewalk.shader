@@ -104,8 +104,8 @@ Shader "Nyc/Sidewalk"
                 float panel = _FlagSize;
                 float panelHash = NycHash2D(floor(float2(wx / panel, wz / panel)));
                 float tone = NycNoise2D(float2(wx * 0.48, wz * 0.48));
-                float grit = (NycNoise2D(float2(wx * 14.0, wz * 14.0)) - 0.5) * 0.08 * detail
-                           * smoothstep(0.07, 0.02, pixelSize);
+                float grit = (NycNoise2D(float2(wx * 8.0, wz * 8.0)) - 0.5) * 0.04 * detail
+                           * smoothstep(0.08, 0.02, pixelSize);
 
                 float joints = max(NycGridLine(wx, panel, _JointWidth),
                                    NycGridLine(wz, panel, _JointWidth)) * detail;
@@ -128,7 +128,7 @@ Shader "Nyc/Sidewalk"
                 float swFresnel = NycWaterFresnel(viewDir);
                 float metallic = min(saturate(swFresnel * 1.6) * max(swPuddle, swWet.z * 0.3), 0.85);
 
-                float grain = (NycNoise2D(float2(wx * 4.5, wz * 4.5)) - 0.5) * 0.003;
+                float grain = (NycNoise2D(float2(wx * 3.5, wz * 3.5)) - 0.5) * 0.002 * smoothstep(0.06, 0.015, pixelSize);
                 float height = (grain - joints * 0.012) * detail * (1.0 - swPuddle) * _BumpScale;
                 float3 bumpedNormal = NycBumpNormal(height, positionWS, normalWS);
 
@@ -141,8 +141,9 @@ Shader "Nyc/Sidewalk"
                 inputData.bakedGI = SampleSH(bumpedNormal);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - roughness);
                 half4 color = UniversalFragmentPBR(inputData, concrete, metallic, half3(0, 0, 0),
-                                                   roughness, NycCanyonAO(positionWS), 0.0h, 1.0h);
+                                                   smoothness, NycCanyonAO(positionWS), 0.0h, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

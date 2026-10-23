@@ -25,7 +25,7 @@ namespace Nyc.Gameplay.Traffic
 
         [Header("Experimental BatchRendererGroup (Unity 6)")]
         [Tooltip("When enabled, vehicle batches use BatchRendererGroup with custom culling; falls back to RenderMeshInstanced if unavailable.")]
-        public bool useBRG = true;
+        public bool useBRG = false;
         public bool useBRGForBatch0
         {
             get => useBRG;

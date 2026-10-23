@@ -586,7 +586,7 @@ namespace Nyc.Gameplay.Traffic
                 if (d < rMin || d > rMax) continue;
                 if (hidden && Visible(pos)) continue;
                 if (controllers && controllers.Active != null &&
-                    Vector2.Distance(pos, controllers.Active.Position) < 25f) continue;
+                    Vector2.Distance(pos, controllers.Active.Position) < 8f) continue;
 
                 // Keep a gap to whoever is already there (works during the initial spawn too).
                 bool occupied = false;
