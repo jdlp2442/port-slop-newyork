@@ -1,0 +1,6 @@
+ExplosionWisps.png derives from the user supplied Explosion.tif.
+Source SHA256: d02e3ed5dd70ee4c5a0859f4f97bec71cae4df59385d307fcf62fb3ecac6e303
+36 frames, 6x6, reduced to 170 pixels per tile (1020x1020).
+TIFF fourth channel is unspecified ExtraSamples=0; preserved as the authored alpha channel, not synthesized from brightness.
+No license was supplied with this standalone TIFF. The CC0 license inside Explosion Textures.zip applies to that archive, not automatically to the TIFF.
+Used as user supplied project content.

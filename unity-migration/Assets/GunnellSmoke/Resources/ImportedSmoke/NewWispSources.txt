@@ -1,0 +1,17 @@
+Derived textures from assets added by the project owner. Original asset packages and their notices remain in Assets/ParticleProFX and Assets/Hun0FX. Original author rights and package licences continue to apply.
+
+ParticleProWisps
+Source: Assets/ParticleProFX/Resources/Textures/smokeSheet04.png
+SHA256: 66e12707285ebafd685eeb3289fff19a8bcc06986552afca43ff2931a99e2068
+Source size: 2048x2048
+Derived: 1024x1024 RGBA, 8x8 frames; source unchanged.
+
+HunStylizedWisps
+Source: Assets/Hun0FX/Textures/Tx_Smoke_Radial_06.png
+SHA256: 46741a7f9fc2d1738339d9ac51e6e94bb47056f30d729feb8684a28798359135
+Source size: 4096x4096
+Derived: 1024x1024 RGBA, 4x4 frames; source unchanged.
+
+ParticleProWisps reserved frame 63: fine filament from Assets/ParticleShadersVol1/Textures/smoke_01.tga
+SHA256: 6e9d31219c416a59be7875a37980fe33ee3335a775699db8a58249c90e4ec337
+Downsampled 256x256 to 128x128; original unchanged. Source package owner rights and licence apply.

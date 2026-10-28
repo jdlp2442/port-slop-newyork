@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a20e240716ad034ea1259f67cf89bac, type: 3}
+  m_Name: SmokeLook_Stylized
+  m_EditorClassIdentifier: Assembly-CSharp::GunnellSmoke.GunnellSmokeLook
+  stylization: 1
+  shapeDeformation: 0.25
+  noiseWorldScale: 0.18
+  detailStrength: 0.12
+  densityFalloff: 0.95
+  smokeColor: {r: 0.52, g: 0.42, b: 0.29, a: 1}
+  sunColor: {r: 0.85, g: 0.85, b: 0.82, a: 1}
+  skyAmbientTint: {r: 1, g: 1, b: 1, a: 1}
+  groundAmbientTint: {r: 0.94, g: 0.94, b: 0.92, a: 1}
+  shadowColor: {r: 0.3, g: 0.23, b: 0.15, a: 1}
+  highlightColor: {r: 1, g: 0.76, b: 0.45, a: 1}
+  ambient: 0.85
+  lobeContrast: 0.62
+  multipleScattering: 0.15
+  powderStrength: 0.05
+  shadowDensity: 0.75
+  animationDirection: {x: 0.012, y: -0.085, z: 0.016}
+  animationStrength: 1
+  turbulenceStrength: 0.5
+  turbulenceScale: 0.85
+  turbulenceSpeed: 0.65
+  wispMaterial: {fileID: 2100000, guid: e3793cdd601d58e43995d06b00b17e3b, type: 2}
+  wispSize: 0.65
+  wispOpacity: 0.09

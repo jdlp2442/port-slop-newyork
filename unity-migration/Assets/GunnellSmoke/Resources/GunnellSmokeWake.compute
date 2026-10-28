@@ -1,0 +1,555 @@
+// Local smoke transport. Original implementation of semi-Lagrangian transport,
+// obstacle-aware pressure projection and diffusion (GPU Gems 3, chapter 30).
+// Density and deficit-weighted mixing age travel with velocity. Unresolved gas
+// entrainment restores the base cloud; there is no shrinking aperture geometry.
+#pragma kernel Clear
+#pragma kernel ClearDensity
+#pragma kernel Inject
+#pragma kernel InjectVelocity
+#pragma kernel InjectExplosion
+#pragma kernel InjectExplosionVelocity
+#pragma kernel InjectMotion
+#pragma kernel InjectMotionVelocity
+#pragma kernel AdvectVelocity
+#pragma kernel ComputeVorticity
+#pragma kernel ConfineVorticity
+#pragma kernel Divergence
+#pragma kernel Pressure
+#pragma kernel Project
+#pragma kernel AdvectDensity
+#pragma kernel CorrectDensity
+#pragma kernel ClassifyDensityTiles
+#pragma kernel ExpandDensityTiles
+
+struct Shot { float4 originFwd, forward, axisA, axisB, radius, shape, bound, phase; };
+StructuredBuffer<Shot> _Shots;
+int _ShotIndex;
+int3 _DispatchMin, _DispatchSize;
+Texture3D<float2> _Collision;
+Texture3D<float4> _Velocity;
+Texture3D<float2> _Density;
+Texture3D<float2> _Predicted;
+Texture3D<float> _Pressure;
+Texture3D<float> _Divergence;
+Texture3D<float4> _Vorticity;
+RWTexture3D<float4> _VelocityOut;
+RWTexture3D<float2> _DensityOut;
+RWTexture3D<float> _PressureOut;
+RWTexture3D<float> _DivergenceOut;
+RWTexture3D<float4> _VorticityOut;
+SamplerState sampler_linear_clamp;
+int3 _Resolution;
+float3 _Min, _Size, _Cell, _Wind;
+float _Dt, _Time;
+float3 _FlowOrigin;
+float4 _FlowParameters;
+float _FlowTime;
+float4 _ImpulseCenterRadius, _ImpulseFlowStrength;
+float _ImpulseReach, _ImpulseKickScale;
+float4 _RecoverySpheres[2], _RecoveryFlows[2], _RecoveryStates[2];
+int _ImpulseSeed;
+float _VorticityStrength;
+float4 _MotionA, _MotionB, _MotionFlow, _MotionSweep;
+float _MotionKind;
+int _UseDensityTiles;
+int3 _TileResolution;
+Texture3D<float> _DensityTiles;
+RWTexture3D<float> _DensityTilesOut;
+groupshared uint tileDisturbed;
+
+// A tile is uniform only when ALL source cells have completely recovered.
+// No readback, temporal reuse or approximation of partly recovered cells.
+[numthreads(8,8,8)]
+void ClassifyDensityTiles(uint3 c : SV_DispatchThreadID, uint3 tile : SV_GroupID, uint lane : SV_GroupIndex)
+{
+    if(lane==0) tileDisturbed=0;
+    GroupMemoryBarrierWithGroupSync();
+    if(all(c<(uint3)_Resolution))
+        if(_Density.Load(int4(c,0)).x!=1.0) InterlockedOr(tileDisturbed,1u);
+    GroupMemoryBarrierWithGroupSync();
+    if(lane==0) _DensityTilesOut[tile]=(float)tileDisturbed;
+}
+
+[numthreads(4,4,4)]
+void ExpandDensityTiles(uint3 tile : SV_DispatchThreadID)
+{
+    if(any(tile>=(uint3)_TileResolution)) return;
+    float disturbed=0;
+    [unroll] for(int z=-1;z<=1;z++)
+    [unroll] for(int y=-1;y<=1;y++)
+    [unroll] for(int x=-1;x<=1;x++)
+    {
+        int3 neighbour=(int3)tile+int3(x,y,z);
+        if(all(neighbour>=0) && all(neighbour<_TileResolution))
+            disturbed=max(disturbed,_DensityTiles.Load(int4(neighbour,0)));
+    }
+    _DensityTilesOut[tile]=disturbed;
+}
+
+float3 UV(int3 c) { return (c + 0.5) / (float3)_Resolution; }
+bool Border(int3 c) { return any(c <= 0) || any(c >= _Resolution - 1); }
+bool Open(float3 uv) {
+    return all(uv > 0) && all(uv < 1) && _Collision.SampleLevel(sampler_linear_clamp, uv, 0).y > 0.5;
+}
+bool Free(int3 c) { return !Border(c) && Open(UV(c)); }
+float3 Position(int3 c) { return _Min + UV(c) * _Size; }
+float3 BaseFlow(float3 p) {
+    // Each wave is perpendicular to its phase gradient (divergence-free).
+    // The same bounded rolling field animates the visible density and CPU
+    // wisps. Previously this solver used an unrelated clock and circulation.
+    float3 q = p - _FlowOrigin;
+    float frequency=max(0.3,_FlowParameters.y);
+    float rate=max(0,_FlowParameters.z)*max(0,_FlowParameters.w);
+    float3 phase=float3(q.y*0.8+q.z*0.6,q.x*0.6+q.z*0.8,q.x*0.8+q.y*0.6)*frequency
+        + _FlowTime*rate*float3(0.73,-0.61,0.83);
+    float3 w=cos(phase)*float3(0.73,-0.61,0.83)*rate;
+    float amplitude=min(0.28*clamp(_FlowParameters.x,0,0.8),0.18/frequency);
+    return _Wind - float3(0.8*w.y-0.6*w.z,0.8*w.z-0.6*w.x,0.8*w.x-0.6*w.y)*amplitude;
+}
+float3 Slide(float3 v, float3 uv) {
+    float3 step = _Cell / _Size;
+    float3 gradient = float3(
+        _Collision.SampleLevel(sampler_linear_clamp, uv + float3(step.x, 0, 0), 0).y - _Collision.SampleLevel(sampler_linear_clamp, uv - float3(step.x, 0, 0), 0).y,
+        _Collision.SampleLevel(sampler_linear_clamp, uv + float3(0, step.y, 0), 0).y - _Collision.SampleLevel(sampler_linear_clamp, uv - float3(0, step.y, 0), 0).y,
+        _Collision.SampleLevel(sampler_linear_clamp, uv + float3(0, 0, step.z), 0).y - _Collision.SampleLevel(sampler_linear_clamp, uv - float3(0, 0, step.z), 0).y) / _Cell;
+    float g2 = dot(gradient, gradient);
+    if (g2 > 0.001) {
+        float3 normal = gradient * rsqrt(g2);
+        v -= normal * min(0.0, dot(v, normal));
+    }
+    return v;
+}
+float3 Trace(float3 uv, float3 velocity) {
+    float3 mid = uv - velocity * (0.5 * _Dt) / _Size;
+    float3 v = Open(mid) ? _Velocity.SampleLevel(sampler_linear_clamp, mid, 0).xyz : velocity;
+    float3 back = uv - v * _Dt / _Size;
+    // Stop before a solid rather than sampling smoke on the other side.
+    float3 safe = uv;
+    [unroll] for (int k = 1; k <= 4; k++) {
+        float3 next = lerp(uv, back, k * 0.25);
+        if (!Open(next)) break;
+        safe = next;
+    }
+    return safe;
+}
+
+bool RestoredTile(int3 c)
+{
+    if(_UseDensityTiles==0 || _DensityTiles.Load(int4(c >> 3,0))>0.5) return false;
+    // One neighbouring tile supplies an 8-cell halo. Allow at most 6 cells
+    // of travel, reserving two for interpolation and the mixing stencil.
+    // Check both velocities used by midpoint tracing. Fast impulses fall back
+    // to the full solver instead of being clipped by a fixed sparse domain.
+    float3 uv=UV(c);
+    float3 v=_Velocity.SampleLevel(sampler_linear_clamp,uv,0).xyz;
+    if(any(abs(v)*_Dt/_Cell>6.0)) return false;
+    float3 mid=uv-v*(0.5*_Dt)/_Size;
+    float3 middleVelocity=_Velocity.SampleLevel(sampler_linear_clamp,mid,0).xyz;
+    return all(abs(middleVelocity)*_Dt/_Cell<=6.0);
+}
+
+[numthreads(4,4,4)]
+void Clear(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    _VelocityOut[c] = float4(Free(c) ? BaseFlow(Position(c)) : 0, 0);
+    _PressureOut[c] = 0;
+}
+
+[numthreads(4,4,4)]
+void ClearDensity(uint3 c : SV_DispatchThreadID) {
+    if (all(c < (uint3)_Resolution)) _DensityOut[c] = float2(1,0);
+}
+
+float Injection(float3 pos, out float3 impulse) {
+    float fraction = 1;
+    impulse = 0;
+    [unroll] for (int i = 0; i < 1; i++) {
+        Shot h = _Shots[_ShotIndex];
+        float3 delta = pos - h.originFwd.xyz;
+        float along = dot(delta, h.forward.xyz);
+        if (along < 0 || along > h.phase.x) continue;
+        float3 side = delta - along * h.forward.xyz;
+        if (dot(side, side) > h.bound.w * h.bound.w * 2.25) continue;
+        float axial = saturate(along / max(h.phase.x, 0.001));
+        float r = lerp(h.radius.x, h.radius.y, axial);
+        float2 q = float2(dot(side, h.axisA.xyz) / h.shape.z, dot(side, h.axisB.xyz) * h.shape.z);
+        float warp = sin(dot(q / r, float2(1.8,2.4)) + h.shape.x * 6.28318 + along * 0.28);
+        float shaped = r * (1 + warp * 0.05);
+        float dist = length(q);
+        float rim = max(0.035, r * 0.18);
+        float cut = 1 - smoothstep(shaped - rim, shaped + rim, dist);
+        fraction = min(fraction, 1 - cut * 0.997);
+        float envelope = exp(-dot(side,side) / max(r * r * 2, 0.001));
+        float3 normal = side / max(length(side), 0.025);
+        float3 swirl = cross(h.forward.xyz, normal);
+        impulse += (h.forward.xyz * 0.36 + normal * 0.30
+            + swirl * (0.15 + h.originFwd.w * 0.18)) * envelope;
+    }
+    return fraction;
+}
+[numthreads(4,4,4)]
+void Inject(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    float3 unused;
+    float fraction = Injection(Position(c), unused);
+    float2 previous = _DensityOut[c];
+    // Only the actual new wake resets its local mixing history. A shot in a
+    // different part of the cloud cannot renew the lifetime of older cavities.
+    _DensityOut[c] = float2(min(previous.x, fraction), previous.y * fraction);
+}
+[numthreads(4,4,4)]
+void InjectVelocity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    float3 impulse;
+    Injection(Position(c), impulse);
+    _VelocityOut[c] = float4(clamp(_VelocityOut[c].xyz + impulse, -2.0, 2.0), 0);
+}
+
+float MotionEnvelope(float3 pos, out float3 outward) {
+    // A simplified moving body transfers velocity to the surrounding gas.
+    // A short swept capsule follows the blade; neither carves a bullet tunnel.
+    float3 segment = _MotionB.xyz-_MotionA.xyz;
+    float3 local = pos-_MotionA.xyz;
+    float3 sweep = _MotionSweep.xyz;
+    // Body capsules are upright and their sweep is horizontal: the two
+    // projections are orthogonal and give a continuous swept body footprint.
+    float sweepT = clamp(dot(local,sweep)/max(dot(sweep,sweep),0.00001),-0.5,0.5);
+    local -= sweep*sweepT;
+    float t = saturate(dot(local,segment)/max(dot(segment,segment),0.00001));
+    float3 side = local-segment*t;
+    float distance = length(side);
+    outward = side/max(distance,0.025);
+    float radius = _MotionA.w;
+    float ripple = sin(dot(pos,float3(5.1,2.7,-3.8))+_MotionSweep.w)
+        *sin(dot(pos,float3(-2.4,3.1,4.6))-_Time*1.1);
+    float edge = radius*(1+0.065*ripple);
+    return 1-smoothstep(edge*0.45,edge*1.55,distance);
+}
+
+[numthreads(4,4,4)]
+void InjectMotion(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    // No interaction before the base cloud has reached this cell.
+    if (_Collision.SampleLevel(sampler_linear_clamp,UV(c),0).x < 0.02) return;
+    float3 outward;
+    float envelope = MotionEnvelope(Position(c),outward);
+    float2 old = _DensityOut[c];
+    float fraction = 1-envelope*_MotionB.w;
+    // Bounded thinning, never subtract repeatedly until the cloud disappears.
+    // Preserve old mixing ages so overlapping movement cannot freeze a shot.
+    if (fraction < old.x) {
+        float addedDeficit = old.x-fraction;
+        _DensityOut[c] = float2(fraction,old.y+addedDeficit*0.7);
+    }
+}
+
+[numthreads(4,4,4)]
+void InjectMotionVelocity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    if (_Collision.SampleLevel(sampler_linear_clamp,UV(c),0).x < 0.02) return;
+    float3 outward;
+    float3 pos = Position(c);
+    float envelope = MotionEnvelope(pos,outward);
+    float speed = length(_MotionFlow.xyz);
+    float3 direction = _MotionFlow.xyz/max(speed,0.001);
+    float3 side = outward-direction*dot(outward,direction);
+    float roll = sin(dot(pos,float3(3.1,1.7,-2.2))+_MotionSweep.w+_Time*1.4);
+    float3 swirl = cross(direction,outward)*roll;
+    // Body drag displaces gas laterally and leaves a rolling wake behind it.
+    // A blade transfers a smaller, short sideways impulse along its arc.
+    float3 target = direction*min(speed*0.38,1.5)
+        + side*min(speed*0.22,0.9) + swirl*min(speed*0.15,0.65);
+    target *= lerp(1.0,0.8,saturate(_MotionKind));
+    float blend = (1-exp(-_MotionFlow.w*9))*envelope;
+    float3 moved = lerp(_VelocityOut[c].xyz,target,blend);
+    _VelocityOut[c] = float4(Slide(clamp(moved,-2.5,2.5),UV(c)),0);
+}
+
+float BlastCut(float3 pos) {
+    float3 delta=pos-_ImpulseCenterRadius.xyz;
+    float radius=max(0.2,_ImpulseCenterRadius.w);
+    float fold=sin(dot(delta,float3(1.7,0.8,-1.1))+_ImpulseSeed*0.017)
+        *sin(dot(delta,float3(-0.6,1.4,1.3))- _ImpulseSeed*0.011);
+    float distance=length(delta)+fold*min(0.32,radius*0.075);
+    return 1.0-smoothstep(radius*0.78,radius+0.32,distance);
+}
+
+[numthreads(4,4,4)]
+void InjectExplosion(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    float cut=BlastCut(Position(c));
+    float2 previous=_DensityOut[c];
+    float fraction=1.0-0.995*cut;
+    _DensityOut[c]=float2(min(previous.x,fraction),previous.y*fraction);
+}
+
+[numthreads(4,4,4)]
+void InjectExplosionVelocity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_DispatchSize)) return;
+    c += (uint3)_DispatchMin;
+    if (any(c >= (uint3)_Resolution) || !Free(c)) return;
+    float3 pos=Position(c), delta=pos-_ImpulseCenterRadius.xyz;
+    float distance=length(delta), radius=max(0.2,_ImpulseCenterRadius.w);
+    float reach=max(_ImpulseReach,0.5);
+    if (distance>=reach) return;
+    float3 radial=delta/max(distance,0.02);
+    float flowLength=length(_ImpulseFlowStrength.xyz);
+    float3 axis=flowLength>1e-4 ? _ImpulseFlowStrength.xyz/flowLength : float3(0,1,0);
+    float3 tangent=cross(axis,radial);
+    float shell=exp(-pow((distance-radius*0.82)/max(0.32,radius*0.24),2.0));
+    float interior=1.0-smoothstep(radius*0.55,reach,distance);
+    float phase=dot(delta,float3(1.3,0.9,-1.7))+_ImpulseSeed*0.023;
+    float curlWave=sin(phase)*sin(phase*0.73+1.1);
+    float strength=saturate(_ImpulseFlowStrength.w/9.0);
+    float3 impulse=(radial*(1.35*shell)+tangent*(0.65*curlWave*interior)
+        +axis*(0.2*interior))*strength;
+    float envelope=1.0-smoothstep(reach*0.75,reach,distance);
+    float4 old=_VelocityOut[c];
+    _VelocityOut[c]=float4(clamp(old.xyz+impulse*envelope*_ImpulseKickScale,-3.5,3.5),0);
+}
+
+float3 ReturningFlow(float3 pos)
+{
+    float3 flow = 0;
+    [unroll] for (int blast=0; blast<2; blast++)
+    {
+        float4 state = _RecoveryStates[blast];
+        if (state.w < 0.5) continue;
+        float4 sphere = _RecoverySpheres[blast];
+        float3 delta = pos-sphere.xyz;
+        float distance = length(delta), radius = max(sphere.w,0.2);
+        float envelope = 1.0-smoothstep(radius*1.05,radius*1.65+0.4,distance);
+        float release = smoothstep(0.85,1.65,state.x) * (1.0-smoothstep(5.4,7.2,state.x));
+        float3 radial = delta/max(distance,0.2);
+        float3 direction = _RecoveryFlows[blast].xyz;
+        float phase = dot(delta,float3(0.82,0.51,-0.73)) + _RecoveryFlows[blast].w;
+        float fold = sin(phase-state.x*0.72) * sin(phase*0.63+state.x*0.47);
+        // Uneven inward entrainment plus a dominant cross-flow transports
+        // existing gas through the void. Tangential curls roll its boundaries.
+        flow += (direction*1.25-radial*(0.78+0.18*fold)
+            +cross(direction,radial)*(0.38*fold)) * envelope*release*state.y;
+    }
+    return flow;
+}
+
+[numthreads(4,4,4)]
+void AdvectVelocity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _VelocityOut[c] = 0; return; }
+    float3 uv = UV(c);
+    float3 v = _Velocity.SampleLevel(sampler_linear_clamp, uv, 0).xyz;
+    v = _Velocity.SampleLevel(sampler_linear_clamp, Trace(uv,v), 0).xyz;
+    v = lerp(v, BaseFlow(Position(c))+ReturningFlow(Position(c)), 1 - exp(-_Dt * 1.15));
+    _VelocityOut[c] = float4(Slide(v,uv), 0);
+}
+
+float3 VelocityAt(int3 p,float3 fallback) {
+    return Free(p) ? _Velocity.Load(int4(p,0)).xyz : fallback;
+}
+
+[numthreads(4,4,4)]
+void ComputeVorticity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _VorticityOut[c]=0; return; }
+    int3 p=(int3)c;
+    float3 center=_Velocity.Load(int4(p,0)).xyz;
+    float3 xp=VelocityAt(p+int3(1,0,0),center), xm=VelocityAt(p-int3(1,0,0),center);
+    float3 yp=VelocityAt(p+int3(0,1,0),center), ym=VelocityAt(p-int3(0,1,0),center);
+    float3 zp=VelocityAt(p+int3(0,0,1),center), zm=VelocityAt(p-int3(0,0,1),center);
+    float3 curl=float3((yp.z-ym.z)/(2*_Cell.y)-(zp.y-zm.y)/(2*_Cell.z),
+        (zp.x-zm.x)/(2*_Cell.z)-(xp.z-xm.z)/(2*_Cell.x),
+        (xp.y-xm.y)/(2*_Cell.x)-(yp.x-ym.x)/(2*_Cell.y));
+    _VorticityOut[c]=float4(curl,length(curl));
+}
+
+float OmegaMagnitude(int3 p,float center) {
+    return Free(p) ? _Vorticity.Load(int4(p,0)).w : center;
+}
+
+[numthreads(4,4,4)]
+void ConfineVorticity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _VelocityOut[c]=0; return; }
+    int3 p=(int3)c;
+    float center=_Vorticity.Load(int4(p,0)).w;
+    float3 gradient=float3(
+        (OmegaMagnitude(p+int3(1,0,0),center)-OmegaMagnitude(p-int3(1,0,0),center))/(2*_Cell.x),
+        (OmegaMagnitude(p+int3(0,1,0),center)-OmegaMagnitude(p-int3(0,1,0),center))/(2*_Cell.y),
+        (OmegaMagnitude(p+int3(0,0,1),center)-OmegaMagnitude(p-int3(0,0,1),center))/(2*_Cell.z));
+    float magnitude=length(gradient);
+    float3 force=magnitude>1e-5 ? cross(gradient/magnitude,_Vorticity.Load(int4(p,0)).xyz) : 0;
+    float3 uv=UV(p);
+    // Vorticity confinement has units of acceleration. Scale by the flow-cell
+    // width before integrating, as in grid solvers, so changing grid resolution
+    // does not make the smoke streak or become unstable.
+    float h=min(_Cell.x,min(_Cell.y,_Cell.z));
+    float3 velocity=_Velocity.Load(int4(p,0)).xyz+force*(_VorticityStrength*h*_Dt);
+    _VelocityOut[c]=float4(Slide(velocity,uv),0);
+}
+
+float Component(int3 c, int axis) { return Free(c) ? _Velocity.Load(int4(c,0))[axis] : 0; }
+[numthreads(4,4,4)]
+void Divergence(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _DivergenceOut[c] = 0; return; }
+    int3 p = c;
+    _DivergenceOut[c] = 0.5 * ((Component(p+int3(1,0,0),0) - Component(p-int3(1,0,0),0)) / _Cell.x
+        + (Component(p+int3(0,1,0),1) - Component(p-int3(0,1,0),1)) / _Cell.y
+        + (Component(p+int3(0,0,1),2) - Component(p-int3(0,0,1),2)) / _Cell.z);
+}
+float NeighborPressure(int3 c, float center) { return Free(c) ? _Pressure.Load(int4(c,0)) : center; }
+[numthreads(4,4,4)]
+void Pressure(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _PressureOut[c] = 0; return; }
+    int3 p = c;
+    float center = _Pressure.Load(int4(p,0));
+    float3 w = 1 / (_Cell * _Cell);
+    float sum = (NeighborPressure(p+int3(1,0,0),center) + NeighborPressure(p-int3(1,0,0),center)) * w.x
+        + (NeighborPressure(p+int3(0,1,0),center) + NeighborPressure(p-int3(0,1,0),center)) * w.y
+        + (NeighborPressure(p+int3(0,0,1),center) + NeighborPressure(p-int3(0,0,1),center)) * w.z;
+    _PressureOut[c] = (sum - _Divergence.Load(int4(p,0))) / (2 * (w.x+w.y+w.z));
+}
+[numthreads(4,4,4)]
+void Project(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (!Free(c)) { _VelocityOut[c] = 0; return; }
+    int3 p = c;
+    float center = _Pressure.Load(int4(p,0));
+    float3 grad = 0.5 * float3(
+        NeighborPressure(p+int3(1,0,0),center) - NeighborPressure(p-int3(1,0,0),center),
+        NeighborPressure(p+int3(0,1,0),center) - NeighborPressure(p-int3(0,1,0),center),
+        NeighborPressure(p+int3(0,0,1),center) - NeighborPressure(p-int3(0,0,1),center)) / _Cell;
+    _VelocityOut[c] = float4(Slide(_Velocity.Load(int4(p,0)).xyz - grad,UV(c)),0);
+}
+float2 NeighborDensity(int3 c, float2 center) { return Free(c) ? _Density.Load(int4(c,0)) : center; }
+void MixingAgeBounds(float2 value, inout float2 bounds) {
+    float deficit = 1-value.x;
+    // Fully occupied cells carry no deficit history and cannot rejuvenate
+    // an old wake as they enter it. Bound age together with its transported
+    // deficit: independent MacCormack limits can otherwise lose this moment.
+    if (deficit > 0.001) {
+        float age = value.y / deficit;
+        bounds = float2(min(bounds.x,age), max(bounds.y,age));
+    }
+}
+[numthreads(4,4,4)]
+void AdvectDensity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (RestoredTile((int3)c)) { _DensityOut[c]=float2(1,0); return; }
+    if (!Free(c)) { _DensityOut[c] = float2(1,0); return; }
+    int3 p = c;
+    float3 uv = UV(c);
+    _DensityOut[c] = _Density.SampleLevel(sampler_linear_clamp,
+        Trace(uv, _Velocity.SampleLevel(sampler_linear_clamp, uv, 0).xyz),0);
+}
+[numthreads(4,4,4)]
+void CorrectDensity(uint3 c : SV_DispatchThreadID) {
+    if (any(c >= (uint3)_Resolution)) return;
+    if (RestoredTile((int3)c)) { _DensityOut[c]=float2(1,0); return; }
+    if (!Free(c)) { _DensityOut[c] = float2(1,0); return; }
+    int3 p = c;
+    float3 uv = UV(c);
+    float3 forward = uv + _Velocity.SampleLevel(sampler_linear_clamp,uv,0).xyz * _Dt / _Size;
+    float2 center = _Density.Load(int4(p,0));
+    float2 predicted = _Predicted.Load(int4(p,0));
+    float2 reverse = Open(forward) && Open(lerp(uv,forward,0.5))
+        ? _Predicted.SampleLevel(sampler_linear_clamp,forward,0) : predicted;
+    // Limited MacCormack error correction retains rolling folds without ringing.
+    float2 neighbours = 0;
+    float2 ageBounds = float2(6,0);
+    MixingAgeBounds(center,ageBounds);
+    [unroll] for (int axis = 0; axis < 3; axis++) {
+        int3 offset = 0; offset[axis] = 1;
+        float2 a = NeighborDensity(p+offset,center), b = NeighborDensity(p-offset,center);
+        neighbours += a+b;
+        MixingAgeBounds(a,ageBounds); MixingAgeBounds(b,ageBounds);
+    }
+    // Exact constant-field shortcut. When transport, reverse transport and
+    // all six neighbours are fully restored, correction/mixing can only
+    // produce (1,0). Avoid the departure footprint and recovery trigonometry
+    // for the large unaffected part of every wake grid.
+    if(center.x>=1.0&&predicted.x>=1.0&&reverse.x>=1.0&&neighbours.x>=6.0)
+    {
+        _DensityOut[c]=float2(1,0);return;
+    }
+    // Bound the correction by the *departure* interpolation footprint. Using
+    // only neighbours of the destination pins minima to cells against flow,
+    // leaving especially persistent cavities at one end of a long tunnel.
+    float3 departure = Trace(uv, _Velocity.SampleLevel(sampler_linear_clamp,uv,0).xyz);
+    int3 base = (int3)floor(departure * _Resolution - 0.5);
+    float2 lo = predicted, hi = predicted;
+    [unroll] for (int corner = 0; corner < 8; corner++) {
+        int3 offset = int3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
+        float2 sample = NeighborDensity(base + offset, center);
+        lo = min(lo,sample); hi = max(hi,sample);
+        MixingAgeBounds(sample,ageBounds);
+    }
+    float2 corrected = clamp(predicted + 0.5 * (center - reverse), lo, hi);
+    // Small bounded mixing, with no flux through solid neighbours. The
+    // aperture dissolves through transport, not numerical blur alone.
+    float mix = min(0.12, _Dt * 6 * 0.0014 / min(_Cell.x*_Cell.x,min(_Cell.y*_Cell.y,_Cell.z*_Cell.z)));
+    float2 mixed = lerp(corrected,neighbours/6,mix);
+    float deficit = saturate(1-mixed.x);
+    if (deficit < 0.001) { _DensityOut[c] = float2(1,0); return; }
+    float age = max(0.0,mixed.y) / max(deficit,0.0001);
+    age = ageBounds.x <= ageBounds.y ? clamp(age,ageBounds.x,ageBounds.y) : 0;
+    age = min(6.0,age) + _Dt;
+    // This field is a disturbance of a continuously occupied base cloud,
+    // not an isolated supply of smoke. Advection alone conserves the removed
+    // mass, so repeated shots otherwise hollow it out indefinitely. Model
+    // subgrid entrainment with broad, moving world-space patches. Refill is
+    // local in 3D (including both ends), and remains blocked by the base solid
+    // mask. The carried age supplies a gentle tail even in stagnant pockets.
+    float3 pos = Position(c);
+    float patch = 0.5 + 0.5 * sin(dot(pos,float3(1.7,0.8,-1.1)) - _Time * 0.43)
+        * sin(dot(pos,float3(-0.6,1.4,1.3)) + _Time * 0.31);
+    float blastWeight = 0, blastAge = 1e5, frontReadiness = 1;
+    [unroll] for (int blast=0; blast<2; blast++)
+    {
+        if (_RecoveryStates[blast].w < 0.5) continue;
+        float radius = max(_RecoverySpheres[blast].w,0.2);
+        float weight = 1.0-smoothstep(radius*1.02,radius*1.5+0.4,length(pos-_RecoverySpheres[blast].xyz));
+        blastWeight = max(blastWeight,weight);
+        if (weight > 0.5) blastAge = min(blastAge,_RecoveryStates[blast].x);
+        float3 delta = pos-_RecoverySpheres[blast].xyz;
+        float phase = dot(delta,float3(0.72,0.24,-0.65))*1.25+_RecoveryFlows[blast].w;
+        float fold = sin(phase-_RecoveryStates[blast].x*0.9)
+            *sin(dot(delta,float3(0.3,0.85,0.4))*0.85-_RecoveryStates[blast].x*0.67);
+        float coordinate = dot(delta,_RecoveryFlows[blast].xyz)/radius;
+        float front = lerp(-1.35,1.35,smoothstep(1.1,6.2,_RecoveryStates[blast].x))+fold*0.22;
+        // The base cloud continuously supplies unresolved gas. Bring that
+        // supply back behind a folded front travelling with the returning
+        // current, rather than waiting for the final uniform restoration.
+        // Density still advects and rolls at the front; solid cells stay sealed.
+        float readiness = smoothstep(-0.22,0.22,front-coordinate);
+        frontReadiness = min(frontReadiness,lerp(1.0,readiness,weight));
+    }
+    float entrainment = lerp(0.55,1.35,patch) * smoothstep(0.65,2.1,age);
+    // Large HE cavities refill mainly through transported fronts. Retain only
+    // a small unresolved mixing term, plus a gentle guaranteed final tail.
+    entrainment *= lerp(1.0,0.045,blastWeight);
+    entrainment += blastWeight*frontReadiness*1.65;
+    float responseAge = blastAge < 1e4 ? blastAge : age;
+    float endAge = lerp(5.5,7.0,blastWeight);
+    float tail = smoothstep(lerp(3.5,5.8,blastWeight),lerp(4.5,6.6,blastWeight),responseAge)
+        / max(endAge-responseAge,_Dt);
+    deficit *= exp(-_Dt * (entrainment + tail));
+    if (responseAge >= endAge || deficit < 0.001) deficit = 0;
+    // Both channels are half precision. Form the moment from the density
+    // that will actually be stored, rather than its unrounded float value.
+    // Otherwise restoring density rounds x upwards while y keeps a smaller
+    // deficit, rejuvenating old pockets every step and stalling their tail.
+    float storedFraction = f16tof32(f32tof16(1-deficit));
+    _DensityOut[c] = float2(storedFraction, (1-storedFraction) * age);
+}

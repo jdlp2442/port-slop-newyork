@@ -1,0 +1,62 @@
+// The static arrival/collision field is uploaded once. Reconstruct the exact
+// obstacle-aware three-axis filter on the GPU while the grenade releases gas.
+#pragma kernel Prepare
+#pragma kernel Blur
+#pragma kernel Resolve
+Texture3D<float4> _Arrival;
+Texture3D<float> _Input;
+RWTexture3D<float> _Output;
+RWTexture3D<float2> _Density;
+int3 _Size;
+int _Axis;
+float _Distance, _ReleaseTail;
+
+[numthreads(4,4,4)]
+void Prepare(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint3)_Size)) return;
+    float4 field = _Arrival.Load(int4(id,0));
+    _Output[id] = max(0,1.25-(field.x+field.y*_ReleaseTail)/max(_Distance,0.001));
+}
+
+[numthreads(4,4,4)]
+void Blur(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint3)_Size)) return;
+    int3 p = (int3)id;
+    int3 offset = _Axis == 0 ? int3(1,0,0) : _Axis == 1 ? int3(0,1,0) : int3(0,0,1);
+    float weight = _Arrival.Load(int4(p,0)).w > 0.5 ? 0 : 2;
+    float sum = _Input.Load(int4(p,0))*weight;
+    int3 previous = p-offset, next = p+offset;
+    if (all(previous >= 0) && _Arrival.Load(int4(previous,0)).w < 0.5)
+    { sum += _Input.Load(int4(previous,0)); weight += 1; }
+    if (all(next < _Size) && _Arrival.Load(int4(next,0)).w < 0.5)
+    { sum += _Input.Load(int4(next,0)); weight += 1; }
+    _Output[id] = weight > 0 ? sum/weight : 0;
+}
+
+void Contact(int3 p, inout float sum, inout float count)
+{
+    if (any(p < 0) || any(p >= _Size)) return;
+    float4 field = _Arrival.Load(int4(p,0));
+    if (field.w > 0.5 || field.x >= 1e19) return;
+    sum += _Input.Load(int4(p,0)); count += 1;
+}
+
+[numthreads(4,4,4)]
+void Resolve(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint3)_Size)) return;
+    int3 p = (int3)id;
+    float4 field = _Arrival.Load(int4(p,0));
+    float potential = _Input.Load(int4(p,0));
+    if (field.w > 0.5)
+    {
+        float sum = 0, count = 0;
+        Contact(p+int3(1,0,0),sum,count); Contact(p-int3(1,0,0),sum,count);
+        Contact(p+int3(0,1,0),sum,count); Contact(p-int3(0,1,0),sum,count);
+        Contact(p+int3(0,0,1),sum,count); Contact(p-int3(0,0,1),sum,count);
+        potential = count > 0 ? sum/count : 0;
+    }
+    _Density[id] = float2(potential,field.z);
+}

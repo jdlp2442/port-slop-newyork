@@ -1,0 +1,25 @@
+#pragma kernel Snapshot
+Texture3D<float2> Growth;
+Texture3D<float2> Wake;
+RWTexture3D<float> Result;
+SamplerState sampler_linear_clamp;
+int Resolution;
+float HasWake, Fade, Dissipation, VerticalScale, ShapeRadius;
+float3 GridMin, GridSize, Origin;
+[numthreads(4,4,4)]
+void Snapshot(uint3 id : SV_DispatchThreadID)
+{
+    if(any(id>=Resolution))return;
+    float3 uv=((float3)id+.5)/Resolution;
+    float2 field=Growth.SampleLevel(sampler_linear_clamp,uv,0);
+    float3 local=GridMin+uv*GridSize-Origin;
+    local.y*=local.y>0 ? 1.35*1.15/max(.1,VerticalScale) : .85;
+    float travel=max(0,1.25-field.x);
+    float radial=lerp(min(length(local)/max(.05,ShapeRadius),travel),travel,.85);
+    float surface=1-smoothstep(lerp(.86,.68,Dissipation),1.02,radial+Dissipation*.65);
+    float core=(1-smoothstep(lerp(.50,.26,Dissipation),lerp(.78,.48,Dissipation),radial))*(1-Dissipation);
+    float density=max(surface*.8,core*.85)*smoothstep(.5,.55,field.y)*pow(saturate(1-Dissipation),1.35)*Fade;
+    if(field.x<=.001||field.y<=.5)density=0;
+    if(HasWake>.5)density*=saturate(Wake.SampleLevel(sampler_linear_clamp,uv,0).x);
+    Result[id]=density;
+}

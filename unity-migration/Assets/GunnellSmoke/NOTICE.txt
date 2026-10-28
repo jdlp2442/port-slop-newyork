@@ -1,0 +1,29 @@
+GunnellSmoke — NOTA
+==================
+Carpeta con implementación PROPIA (código original) de humo volumétrico
+estilo granada CS2: flood-fill en CPU, ruido Worley generado en runtime y
+raymarch por compute en URP/RenderGraph.
+
+Sin código de terceros: no contiene ni deriva de ningún repositorio externo.
+
+El transporte local de las estelas de bala (GunnellSmokeWake) es código original.
+Referencias técnicas revisadas para advección de densidad, presión y obstáculos:
+- NVIDIA GPU Gems 3, capítulo 30 (incluida corrección MacCormack limitada):
+  https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids
+- Jet: ejemplos de humo 3D con colliders y contornos fraccionales:
+  https://github.com/doyubkim/fluid-engine-dev
+- Nebula/Pyro: densidad persistente transportada y condiciones de contorno:
+  https://github.com/20niship/nebula
+
+Para la respuesta procedural a la explosión HE se adaptaron ideas generales del
+solver Euleriano descrito por Nebula: impulso en la velocidad, transporte de
+densidad con el flujo, confinamiento de vorticidad y límites de obstáculos. La
+demostración de FluidEngine se consultó como referencia de humo en rejilla con
+colliders. El solver Unity de esta carpeta es una implementación independiente;
+no se copiaron archivos ni código fuente de esos repositorios.
+
+Referencia visual del modo de vóxeles y del llenado del entorno mediante flood fill:
+- More VFX Academy: Counter Strike 2 Smoke in Unreal Engine 5:
+  https://morevfxacademy.com/counter-strike-2-smoke-in-unreal-engine-5/
+La visualización por recorrido de celdas y la integración conjunta de nubes en
+Unity son código original. No se ha incorporado código ni assets del proyecto UE5.

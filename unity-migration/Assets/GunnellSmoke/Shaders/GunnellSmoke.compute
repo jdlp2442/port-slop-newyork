@@ -1,0 +1,1311 @@
+// GunnellSmoke.compute — implementación propia para URP.
+//
+// Técnica (flood-fill de vóxeles + raymarch por compute con ruido Worley
+// enlosable generado en runtime): arquitectura pública del vídeo de Acerola
+// ("CS2 smoke grenades"), reescrita desde cero para RenderGraph/URP. No se ha
+// copiado código del repositorio de referencia (sin licencia).
+//
+// Tres kernels:
+//   CS_GenerateWorley — rellena el volumen compartido con Worley FBM enlosable.
+//   CS_Raymarch       — marcha analítica por píxel contra la rejilla de
+//                       ocupación, con iluminación filtrada y fase HG.
+//   CS_LightingVolume — autosombra compartida en espacio de mundo.
+//
+// FALTABAN los `#pragma kernel`. Sin ellos Unity no registra los kernels:
+// `ComputeShader.HasKernel("CS_GenerateWorley")` devolvía false, la feature
+// avisaba "[Gunnell Smoke] Sin ComputeShader válido: el pase no se encolará" y
+// el humo no se dibujaba nunca. El shader parecía correcto porque las funciones
+// y sus [numthreads] estaban ahí, pero no había nada que despachar.
+
+#pragma kernel CS_GenerateWorley
+#pragma kernel CS_Raymarch
+#pragma kernel CS_LightingVolume
+#pragma kernel CS_LocalLighting
+#pragma kernel CS_SceneShadow
+
+// Use URP's current shadow constants and atlas, including cascade transforms.
+#define _ADDITIONAL_LIGHT_SHADOWS
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+
+// ---------------------------------------------------------- ruido Worley
+
+RWTexture3D<float2> _RWNoiseTex; // x = blended billows for the silhouette, y = Worley FBM detail
+
+int _NoiseSeed;
+int _NoiseCells;      // celdas por eje en la octava base (entero: enlosable)
+int _NoiseOctaves;
+float _NoiseAmplitude;
+float _NoiseWarp;     // deformación de dominio en baldosas
+float _NoiseAdd;      // sesgo aditivo
+int _NoiseInvert;
+int _NoiseResolution;
+
+// Hash determinista 3D -> [0,1). Barato y sin texturas.
+float GunnellHash(int3 p, int seed)
+{
+    uint h = (uint)(p.x * 374761393 + p.y * 668265263 + p.z * 2147483647 + seed * 144665);
+    h = (h ^ (h >> 13)) * 1274126177u;
+    h = h ^ (h >> 16);
+    return (float)h * (1.0 / 4294967295.0);
+}
+
+// Worley F1 invertido (1 en el centro de la celda, 0 en bordes) con enlosado
+// toroidal: los índices de retícula se envuelven en módulo para que el volumen
+// repita sin costuras.
+float GunnellWorley(float3 uvw, int cells, int seed)
+{
+    float3 p = uvw * (float)cells;
+    float3 base = floor(p);
+    float3 f = frac(p);
+    float d = 8.0;
+    for (int z = -1; z <= 1; z++)
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++)
+    {
+        int3 cell = (int3)(base + float3((float)x, (float)y, (float)z));
+        // Módulo positivo sin `%` entero (que en DX12 es lento y avisa). Con
+        // floor() la parte negativa también cae dentro de [0, cells).
+        int3 wrapped = cell - cells * (int3)floor((float3)cell / (float)cells);
+        float3 feature = float3(
+            GunnellHash(wrapped + int3(11, 0, 0), seed),
+            GunnellHash(wrapped + int3(0, 23, 0), seed),
+            GunnellHash(wrapped + int3(0, 0, 37), seed));
+        float3 diff = float3(x, y, z) + feature - f;
+        d = min(d, dot(diff, diff));
+    }
+    // Perfil compacto y redondeado de F1: (1 - distancia²)^3.
+    // Evita la caída lineal que daba lóbulos con puntas y hombros rígidos.
+    float rounded = saturate(1.0 - d);
+    return rounded * rounded * rounded;
+}
+
+float GunnellValueNoise(float3 uvw, int cells, int seed)
+{
+    float3 p = uvw * cells;
+    int3 cell = (int3)floor(p);
+    float3 f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float value = 0.0;
+    for (int z = 0; z <= 1; z++)
+    for (int y = 0; y <= 1; y++)
+    for (int x = 0; x <= 1; x++)
+    {
+        int3 c = cell + int3(x, y, z);
+        c -= cells * (int3)floor((float3)c / cells);
+        float3 weight = lerp(1.0 - f, f, float3(x, y, z));
+        value += GunnellHash(c, seed) * weight.x * weight.y * weight.z;
+    }
+    return value;
+}
+
+// Compact overlapping billows replace the nearest-feature boundary in the
+// macro channel. Cubic kernels reach zero with zero slope; a quadratic union
+// blends unequal, oblique rolls without separating their crests into beads.
+// This work is done only when baking the shared noise texture.
+float GunnellBillows(float3 uvw, int cells, int seed)
+{
+    float3 p = uvw * cells;
+    int3 base = (int3)floor(p);
+    float3 f = frac(p);
+    float sum = 0.0;
+    for (int z = -1; z <= 1; z++)
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++)
+    {
+        int3 cell = base + int3(x, y, z);
+        int3 wrapped = cell - cells * (int3)floor((float3)cell / cells);
+        float3 feature = 0.18 + 0.64 * float3(
+            GunnellHash(wrapped + int3(11, 0, 0), seed),
+            GunnellHash(wrapped + int3(0, 23, 0), seed),
+            GunnellHash(wrapped + int3(0, 0, 37), seed));
+        float3 delta = float3(x, y, z) + feature - f;
+        // Unequal axes and radii produce broad rolls, rather than a collection
+        // of equal spherical caps. Keep every support radius below 1.18 cells:
+        // the existing 27-cell search then includes all nonzero neighbours.
+        float3 variation = (feature - 0.18) / 0.64;
+        float3 axes = lerp(0.78, 1.14, variation.zxy);
+        float3 rolled = float3(0.8 * delta.x + 0.6 * delta.z, delta.y,
+            -0.6 * delta.x + 0.8 * delta.z) / axes;
+        float radiusSquared = lerp(0.85, 1.05, GunnellHash(wrapped + int3(7, 13, 19), seed));
+        float kernel = saturate(1.0 - dot(rolled, rolled) / radiusSquared);
+        float billow = kernel * kernel * kernel;
+        // A quadratic union retains the broad crests while connecting saddles.
+        // The previous fourth-power union isolated each crest like a bead.
+        sum += billow * billow;
+    }
+    float rounded = sqrt(sum);
+    return rounded * rsqrt(1.0 + rounded * rounded);
+}
+
+[numthreads(8, 8, 8)]
+void CS_GenerateWorley(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint)_NoiseResolution)) return;
+    float3 uvw = ((float3)id + 0.5) / (float)_NoiseResolution;
+
+    // Tres campos suaves independientes deforman el dominio al generar la
+    // textura compartida; no se recalculan en cada muestra del raymarch.
+    float3 warpUVW = uvw;
+    if (_NoiseWarp > 0.001)
+    {
+        int warpCells = max(2, _NoiseCells >> 1);
+        float3 warp = float3(
+            GunnellValueNoise(uvw, warpCells, _NoiseSeed + 101),
+            GunnellValueNoise(uvw, warpCells, _NoiseSeed + 211),
+            GunnellValueNoise(uvw, warpCells, _NoiseSeed + 307));
+        warpUVW = frac(uvw + (warp - 0.5) * _NoiseWarp * 0.2);
+    }
+
+    // Canales separados: la primera octava conserva los lóbulos grandes de la
+    // silueta; el FBM completo puede filtrarse por distancia sin redondear la nube.
+    int cells = max(2, _NoiseCells);
+    float macro = GunnellBillows(warpUVW, cells, _NoiseSeed);
+    float sum = 0.0;
+    float amp = 1.0;
+    float norm = 0.0;
+    // El detalle empieza en la segunda octava para no duplicar los lóbulos macro.
+    cells *= 2;
+    for (int o = 0; o < 8; o++)
+    {
+        if (o >= max(1, _NoiseOctaves - 1)) break;
+        // No generar frecuencias por encima de Nyquist: no añaden detalle
+        // resoluble y sólo introducen aliasing y coste al crear el volumen.
+        if (cells > (_NoiseResolution >> 1)) break;
+        float cellular = GunnellWorley(warpUVW, cells, _NoiseSeed + (o + 1) * 17);
+
+        sum += cellular * amp;
+        norm += amp;
+        amp *= 0.5;
+        cells *= 2;
+    }
+    float v = sum / max(norm, 1e-4);
+    v = saturate(v + _NoiseAdd);
+    if (_NoiseInvert != 0) v = 1.0 - v;
+    float fbm = saturate(macro + 0.5 * sum + _NoiseAdd) * _NoiseAmplitude;
+    float erosion = _NoiseInvert != 0 ? max(0.0, _NoiseAmplitude - fbm) : fbm;
+    float roundedMacro = _NoiseInvert != 0 ? 1.0 - macro : macro;
+    // La macro mantiene el tamaño de los lóbulos y el FBM esculpe su interior.
+    _RWNoiseTex[id] = float2(roundedMacro, lerp(v, erosion / max(_NoiseAmplitude, 0.001), 0.45));
+}
+
+// ---------------------------------------------------------- marcha
+
+Texture3D<float2> _NoiseTex;
+Texture2D<float> _DepthTex;
+// Keep this count in sync with GunnellSmokeFeature.MaxVolumes.
+// Unity compute kernels allow 64 textures. 20 * 3 + noise + depth = 62.
+#define GUNNELL_MAX_VOLUMES 20
+Texture3D<float2> _Occupancy0, _Occupancy1, _Occupancy2, _Occupancy3, _Occupancy4, _Occupancy5, _Occupancy6, _Occupancy7, _Occupancy8, _Occupancy9, _Occupancy10, _Occupancy11, _Occupancy12, _Occupancy13, _Occupancy14, _Occupancy15, _Occupancy16, _Occupancy17, _Occupancy18, _Occupancy19;
+Texture3D<float4> _Light0, _Light1, _Light2, _Light3, _Light4, _Light5, _Light6, _Light7, _Light8, _Light9, _Light10, _Light11, _Light12, _Light13, _Light14, _Light15, _Light16, _Light17, _Light18, _Light19;
+RWTexture3D<float4> _RWLocalLight;
+float3 _LocalGridRes;
+int _LocalLightCount, _LocalLightSteps, _LocalShadowsEnabled;
+int _LocalLightZOffset;
+float _LocalLightStrength;
+float4 _LocalPositions[8], _LocalColors[8], _LocalDirections[8], _LocalParams[8];
+RWTexture3D<float4> _RWLightVolume;
+float3 _LightGridRes;
+
+RWTexture2D<float4> _SmokeAlbedo;  // rgb = color acumulado, a = 1 - transmitancia
+RWTexture2D<float2> _SmokeMask;    // r = máscara, g = distancia a la primera muestra densa
+RWTexture2D<float2> _SmokeSceneShadow; // attenuation and receiver eye depth
+int _SceneShadowsEnabled, _SceneShadowCascadeCount, _ReceiveSceneShadows;
+float _SmokeCastShadowStrength;
+
+float4x4 _CameraToWorld;
+float4x4 _CameraInvProjection;
+float4x4 _CameraInvViewProj;
+float3 _CameraWorldPos;
+float3 _CameraForward;
+float2 _BufferSize;                // w,h del target de humo
+
+SamplerState gPointClamp;
+SamplerState gLinearClamp;
+SamplerState sampler_linear_repeat;
+SamplerState sampler_linear_clamp;
+
+int _VolumeCount, _LightingIndex, _VoxelMode;
+float4 _VolumeMinVoxel[GUNNELL_MAX_VOLUMES], _VolumeResFade[GUNNELL_MAX_VOLUMES], _VolumeOriginRadius[GUNNELL_MAX_VOLUMES], _VolumeShape[GUNNELL_MAX_VOLUMES];
+float4 _VolumeRelease[GUNNELL_MAX_VOLUMES];
+float4 _VolumeActiveMin[GUNNELL_MAX_VOLUMES], _VolumeActiveMax[GUNNELL_MAX_VOLUMES];
+float4 _VolumeLightingNeighbours[GUNNELL_MAX_VOLUMES];
+float4 _VolumeSunLayout[GUNNELL_MAX_VOLUMES], _VolumeLocalLayout[GUNNELL_MAX_VOLUMES];
+float4 _VolumeLightingTexel[GUNNELL_MAX_VOLUMES];
+// Explicit per-call context. Every density evaluation chooses its own cloud;
+// integration order is along the ray, never by camera-to-cloud distance.
+#define _GridRes ((int3)_VolumeResFade[volume].xyz)
+#define _GridMin (_VolumeMinVoxel[volume].xyz)
+#define _VoxelSize (_VolumeMinVoxel[volume].w)
+#define _SmokeOrigin (_VolumeOriginRadius[volume].xyz)
+#define _SphereRadius (_VolumeOriginRadius[volume].w)
+#define _VerticalScale (_VolumeShape[volume].x)
+#define _Dissipation (_VolumeShape[volume].y)
+#define _WakeActive ((int)_VolumeShape[volume].z)
+#define _BlastCount ((int)_VolumeShape[volume].w)
+#define _BlastOffset (volume * 2)
+#define _Fade (_VolumeResFade[volume].w)
+#define _ReleaseAge (_VolumeRelease[volume].x)
+#define _ReleaseEnergy (_VolumeRelease[volume].y)
+#define _BlastWakeActive ((int)_VolumeRelease[volume].w)
+
+float3 _SunDirection;              // dirección HACIA el sol, normalizada
+float3 _SunColor;
+float3 _SmokeColor;
+
+int _StepCount;
+int _OverlapDetailLimit; // 0 = original detail for every contribution; 2 = crowded view
+int _SceneShadowSteps;
+Texture2D<float4> _ViewSmokeAlbedo;
+float _InteriorDetail;
+float _StepSize;
+int _LightStepCount;
+float _LightStepSize;
+float _VolumeDensity;
+float _Absorption;
+float _Scattering;
+float _ShadowDensity;
+float _PhaseG;                     // anisotropía HG (el ref usa 0 + Rayleigh)
+int _PhaseFunc;                    // 0 = HG, 2 = Rayleigh (default del ref)
+float _NoiseErode;                 // cuánto erosiona el ruido (0 = nube lisa)
+float _AnimationStrength;
+float3 _AnimationDirection;
+float _TurbulenceStrength;
+float _TurbulenceScale;
+float _TurbulenceSpeed;
+float _TimeSeconds;
+float _AlphaThreshold;
+float _DensityFalloff;             // = 1 - densityFalloff (ref); umbral del smoothstep
+float _ShapeDeformation;            // deformación macro de la superficie en espacio normalizado
+float _NoiseWorldScale;
+float _DetailStrength;
+float _LobeContrast;
+float _ExtinctionCoeff;            // = absorption + scattering (ref lo pasa junto)
+float3 _ExtinctionColor;           // ref: (1,1,1) -> tau/color = tau
+float _Ambient;                    // luz ambiental isotrópica (relleno del cuerpo)
+float3 _SkyAmbientTint;
+float3 _GroundAmbientTint;
+float _MultipleScattering;
+float _PowderStrength;
+float _Stylization;
+float3 _StylizedShadow;
+float3 _StylizedHighlight;
+float4 _BlastSpheres[GUNNELL_MAX_VOLUMES * 2];
+float4 _BlastStates[GUNNELL_MAX_VOLUMES * 2];
+float4 _BlastFlows[GUNNELL_MAX_VOLUMES * 2];
+int _FrameIndex;
+int _DebugForce;                   // 1 = depuracion (HLSL no admite init en global)
+
+// ---------------------------------------------------------- agujeros de bala
+// Persistent fraction, transported by the shared obstacle-aware wake solver.
+Texture3D<float2> _Wake0, _Wake1, _Wake2, _Wake3, _Wake4, _Wake5, _Wake6, _Wake7, _Wake8, _Wake9, _Wake10, _Wake11, _Wake12, _Wake13, _Wake14, _Wake15, _Wake16, _Wake17, _Wake18, _Wake19;
+int _BulletHoleCount; // retained for the existing debug view
+float _BulletHoleDepth;
+
+// Ruido de gradiente entrelazado (IGN): estable por píxel, sin texturas.
+// Sin parámetro de frame: la IGN clásica es justo eso, estable por píxel (la
+// varianza temporal la promedia la reproyección). Antes recibía `frame` pero se
+// pasaba dentro de un float3 que se truncaba a float2 en el `dot`, así que no
+// hacía nada; se quita para que el código diga lo que hace.
+float GunnellIGN(int2 pix)
+{
+    float3 magic = float3(0.06711056, 0.00583715, 52.9829189);
+    float2 p = float2((float)pix.x, (float)pix.y);
+    float v = frac(magic.z * frac(dot(p, magic.xy)));
+    return v;
+}
+
+bool GunnellRayBox(float3 ro, float3 rd, float3 bmin, float3 bmax, out float t0, out float t1)
+{
+    float3 inv = 1.0 / max(abs(rd), float3(1e-6, 1e-6, 1e-6)) * sign(rd + float3(1e-9, 1e-9, 1e-9));
+    float3 tA = (bmin - ro) * inv;
+    float3 tB = (bmax - ro) * inv;
+    float3 tmin = min(tA, tB);
+    float3 tmax = max(tA, tB);
+    t0 = max(max(tmin.x, tmin.y), tmin.z);
+    t1 = min(min(tmax.x, tmax.y), tmax.z);
+    return t1 > max(t0, 0.0);
+}
+
+float2 GunnellOccTrilinear(float3 uvw, int volume)
+{
+    float2 value=0;
+    [branch] switch(volume) {
+        case 0: value = _Occupancy0.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 1: value = _Occupancy1.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 2: value = _Occupancy2.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 3: value = _Occupancy3.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 4: value = _Occupancy4.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 5: value = _Occupancy5.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 6: value = _Occupancy6.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 7: value = _Occupancy7.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 8: value = _Occupancy8.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 9: value = _Occupancy9.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 10: value = _Occupancy10.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 11: value = _Occupancy11.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 12: value = _Occupancy12.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 13: value = _Occupancy13.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 14: value = _Occupancy14.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 15: value = _Occupancy15.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 16: value = _Occupancy16.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 17: value = _Occupancy17.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 18: value = _Occupancy18.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 19: value = _Occupancy19.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+    }
+    return value;
+}
+
+float GunnellPhaseHG(float cosTheta, float g)
+{
+    float g2 = g * g;
+    return (1.0 - g2) / pow(max(1e-4, 1.0 + g2 - 2.0 * g * cosTheta), 1.5);
+}
+
+// Fase de la escena de referencia: el SampleScene usa phaseFunction=2 (Rayleigh),
+// NO Henyey-Greenstein. Rayleigh es isotropo-ish y mucho mas suave que HG, y con
+// `_PhaseG=0` aporta ~0.0597 constante (3/16pi * (1+cos^2)); es lo que hace que el
+// brillo no dependa de mirar a favor o contra el sol. `_PhaseFunc` selecciona:
+// 0 = HG, 2 = Rayleigh (default del ref). El resto = HG.
+float GunnellPhase(int func, float cosTheta, float g)
+{
+    if (func == 2)
+        return (3.0 / (16.0 * 3.14159265)) * (1.0 + cosTheta * cosTheta);
+    return GunnellPhaseHG(cosTheta, g);
+}
+
+float GunnellBlastCarve(float3 pos, float detail, int volume)
+{
+    if (_BlastCount <= 0) return 1.0;
+    float remaining = 1.0;
+    // Analytic carving is kept as a fallback until the solver wake is ready.
+    for (int k = 0; _BlastWakeActive == 0 && _BlastCount > 0 && k < 2; k++)
+    {
+        float4 state = _BlastStates[_BlastOffset + k];
+        if (state.w < 0.5) continue;
+        float age = max(0.0, _TimeSeconds - state.x);
+        float4 sphere = _BlastSpheres[_BlastOffset + k];
+        float3 delta=pos-sphere.xyz;
+        float radius=sphere.w*smoothstep(0.0,0.5,age);
+        float distance=length(delta)+(detail-0.5)*0.30;
+        float cleared=1.0-smoothstep(radius*0.78,radius+0.35,distance);
+        // The cavity keeps its size as gas folds cross it. Recovery advances
+        // through an advected, uneven front rather than shrinking a sphere.
+        float fold=sin(dot(delta,float3(0.72,0.24,-0.65))*1.25-age*0.9)
+            *sin(dot(delta,float3(0.3,0.85,0.4))*0.85-age*0.67);
+        float coordinate=dot(delta,_BlastFlows[_BlastOffset+k].xyz)/max(sphere.w,0.2);
+        float front=lerp(-1.35,1.35,smoothstep(1.1,6.2,age))
+            +fold*0.22+(detail-0.5)*0.16;
+        float fill=smoothstep(coordinate-0.22,coordinate+0.22,front);
+        // Exact full restoration at the end, including overlapping explosions.
+        fill=lerp(fill,1.0,smoothstep(6.3,7.0,age));
+        remaining *= 1.0-cleared*smoothstep(0.0,0.06,age)*(1.0-fill);
+    }
+    return remaining;
+}
+
+// La rejilla limita la propagación; un SDF continuo define los lóbulos visibles.
+float GunnellDensity(float3 pos, float2 v, float macroNoise, float detailNoise, int volume)
+{
+    if (v.x <= 0.001 || v.y <= 0.5) return 0.0;
+    // The surface follows travel through free cells, including corners and
+    // ducts. The second channel clips obstacles independently of that surface.
+    float3 local = pos - _SmokeOrigin;
+    local.y *= local.y > 0.0 ? 1.35 * 1.15 / max(_VerticalScale, 0.1) : 0.85;
+    float freeDistance = length(local) / max(_SphereRadius, 0.05);
+    // The filtered travel field defines the shape. A small analytic component
+    // smooths the lattice metric while allowing pressure to extend along ducts.
+    float travelDistance = max(0.0, 1.25 - v.x);
+    // Analytic smoothing may round the lattice, but must never cut connected
+    // gas short in a long conduit or on its way down to a lower floor.
+    float radialDistance = lerp(min(freeDistance, travelDistance), travelDistance, 0.85);
+    float dist = radialDistance;
+    float edgeWeight = smoothstep(0.45, 0.92, radialDistance);
+    float displacement = (macroNoise - 0.5) * _ShapeDeformation
+          + (detailNoise - 0.5) * _DetailStrength * edgeWeight;
+    // Limitar el saliente suavemente, sin recortarlo contra una esfera:
+    // un clamp duro deja una cáscara lisa común a todos los lóbulos.
+    float bounded = displacement / 0.18;
+    dist += displacement * rsqrt(1.0 + bounded * bounded);
+    // El contorno se erosiona de forma irregular antes de perder el núcleo.
+    dist += _Dissipation * (0.42 + detailNoise * 0.26 + macroNoise * 0.12);
+    float falloff = lerp(max(_DensityFalloff, 0.86), 0.68, _Dissipation);
+    float surface = 1.0 - smoothstep(falloff, 1.02, dist);
+    // Un núcleo continuo une los lóbulos. El ruido remodela la capa exterior,
+    // sin abrir grietas profundas en toda la masa cuando un remolino cambia.
+    float core = (1.0 - smoothstep(lerp(0.50, 0.26, _Dissipation),
+        lerp(0.78, 0.48, _Dissipation), radialDistance)) * (1.0 - _Dissipation);
+    surface = max(surface, core);
+    float fragments = smoothstep(_Dissipation * 0.8 - 0.15, _Dissipation * 0.8 + 0.15,
+        macroNoise * 0.38 + detailNoise * 0.62);
+    float shell = smoothstep(0.35, 0.85, radialDistance);
+    surface *= lerp(1.0, fragments, smoothstep(0.05, 0.7, _Dissipation) * shell);
+    // No saturar valores de pasos: se conserva la transición subcelda filtrada.
+    // The half-mask is the physical cell face. Keep the transition on the
+    // free side, so reconstructed travel cannot add smoke inside a wall.
+    float support = smoothstep(0.5, 0.55, v.y);
+    // Variación continua del medio: el detalle no vacía el núcleo ni convierte
+    // cada octava del ruido en una superficie aislada.
+    // Keep gas in the saddles between rolls. Deep multiplicative erosion made
+    // neighbouring lobes read as separate balls, especially with cel lighting.
+    float relief = lerp(0.68, 1.0, smoothstep(0.26, 0.72, 1.0 - macroNoise));
+    relief *= lerp(0.82, 1.0, smoothstep(0.38, 0.65, detailNoise));
+    float shellDensity = surface * relief;
+    // Broad moving pockets remain dense: reuse the existing noise channels,
+    // never carve the core into isolated puffs or add screen-space grain.
+    float interiorVariation = (macroNoise - 0.5) * 0.24 + (detailNoise - 0.5) * 0.12;
+    float coreDensity = core * (0.85 + interiorVariation * _InteriorDetail);
+    // Unión suave de ambas densidades: evita una arista en el cambio de capa.
+    float join = saturate(1.0 - abs(shellDensity - coreDensity) / 0.18);
+    // A smooth maximum alone adds 0.045 even when both inputs are zero.
+    // That lights the filtered exterior band into a stepped halo at detonation.
+    // Blend only where both parts contain gas; empty space must stay empty.
+    float overlap = saturate(min(shellDensity, coreDensity) / 0.18);
+    float bodyDensity = max(shellDensity, coreDensity) + 0.045 * join * join * overlap;
+    float thinning = pow(saturate(1.0 - _Dissipation), 1.35);
+    return saturate(bodyDensity * support * thinning);
+}
+
+// El ruido compartido tiene la resolución enviada por la feature. El texel proyectado da el
+// mip correcto: cerca conserva los lóbulos finos y lejos promedia el detalle
+// que ya no cabe en un píxel. Sin esto el nivel 0 producía parpadeo y cambios
+// de silueta al mover la cámara hacia atrás.
+float GunnellNoiseLod(float3 pos)
+{
+    float viewDepth = max(0.0, dot(pos - _CameraWorldPos, _CameraForward));
+    float tanHalfFovY = abs(_CameraInvProjection[1][1]);
+    float worldPerPixel = (2.0 * viewDepth * tanHalfFovY) / max(_BufferSize.y, 1.0);
+    float texelFootprint = worldPerPixel * _NoiseWorldScale * (float)_NoiseResolution;
+    return clamp(log2(max(texelFootprint, 1.0)), 0.0, 7.0);
+}
+
+float2 GunnellSampleNoise(float3 uvw, float lod);
+float3 GunnellNoiseCoordinates(float3 pos, int volume);
+
+float GunnellDensityAt(float3 pos, float lod, int volume)
+{
+    float3 uvw = (pos - _GridMin) / ((float3)_GridRes * _VoxelSize);
+    if (any(uvw < 0.0) || any(uvw > 1.0)) return 0.0;
+    float2 noise = GunnellSampleNoise(GunnellNoiseCoordinates(pos, volume), lod);
+    float density = GunnellDensity(pos, GunnellOccTrilinear(uvw, volume), noise.x, noise.y, volume);
+    if (_BlastWakeActive == 0) density *= GunnellBlastCarve(pos, noise.y, volume);
+    return density;
+}
+
+// La lectura base conserva la octava macro. La segunda escala sólo se toma
+// cuando su detalle cabe en el píxel, evitando ese coste a distancia.
+float2 GunnellSampleNoise(float3 uvw, float lod)
+{
+    float cutoff = 2.0 + log2((float)_NoiseResolution / 128.0);
+    float2 sample = _NoiseTex.SampleLevel(sampler_linear_repeat, uvw, min(lod, cutoff));
+    sample.y = lerp(0.5, sample.y, saturate(cutoff - lod));
+    return sample;
+}
+
+// Three broad, oblique rolling waves. Each displacement is perpendicular to
+// its spatial wave direction. The displacement Jacobian norm is at most 0.54, so
+// the coordinate warp cannot fold billows into ribbons, even at high settings.
+// View and shadow use the same field; collision/arrival coordinates stay fixed.
+float3 GunnellNoiseCoordinates(float3 pos, int volume)
+{
+    float time = _TimeSeconds * _AnimationStrength;
+    float3 local = pos - _SmokeOrigin;
+    float3 rolling = float3(dot(local, float3(0.0, 0.8, 0.6)),
+        dot(local, float3(0.6, 0.0, 0.8)), dot(local, float3(0.8, 0.6, 0.0)));
+    float3 phase = rolling * _TurbulenceScale
+        + time * _TurbulenceSpeed * float3(0.73, -0.61, 0.83);
+    float3 wave = sin(phase);
+    float amplitude = min(0.28 * _TurbulenceStrength, 0.18 / max(_TurbulenceScale, 0.001));
+    float3 curl = float3(0.8 * wave.y - 0.6 * wave.z,
+        0.8 * wave.z - 0.6 * wave.x, 0.8 * wave.x - 0.6 * wave.y) * amplitude;
+    // A short rolling impulse belongs to this cloud's detonation, independent
+    // of the scene clock. Broad perpendicular waves turn the growing rolls
+    // without stretching them into trails or moving the obstacle mask.
+    float3 releaseCurl = 0;
+    if (_ReleaseEnergy > 0.001)
+    {
+        float birthPhase = dot(_SmokeOrigin, float3(0.31, 0.17, 0.23));
+        float3 releaseWave = sin(rolling * 0.9
+            + birthPhase + _ReleaseAge * float3(0.95, -0.78, 0.86));
+        releaseCurl = float3(0.8 * releaseWave.y - 0.6 * releaseWave.z,
+            0.8 * releaseWave.z - 0.6 * releaseWave.x,
+            0.8 * releaseWave.x - 0.6 * releaseWave.y) * (0.28 * _ReleaseEnergy);
+        // Integrated rising flow carries the rolls, then settles smoothly into
+        // the sustained motion. Keep noise scale fixed so lobes do not shrink.
+        releaseCurl.y -= 0.48 * (1.0 - exp(-_ReleaseAge * 1.4)) * _ReleaseEnergy;
+    }
+    float3 blastDisplacement = 0.0;
+    // The solver already moves the density and velocity after HE. Applying the
+    // old coordinate warp too would double the motion and stretch the billows.
+    for (int k = 0; _BlastWakeActive == 0 && _BlastCount > 0 && k < 2; k++)
+    {
+        float4 state = _BlastStates[_BlastOffset + k];
+        if (state.w < 0.5) continue;
+        float age = max(0.0, _TimeSeconds - state.x);
+        float4 sphere = _BlastSpheres[_BlastOffset + k];
+        float3 delta = pos - sphere.xyz;
+        float distance = length(delta);
+        float speed = max(9.0,sphere.w/0.5);
+        float front = exp(-abs(distance - age * speed) * 1.4) * exp(-age*0.9);
+        float carry = (1.0-exp(-age*8.0))*exp(-age*1.8)*0.5;
+        float influence = saturate(1.0 - distance / max(0.1, state.z));
+        float refill = sin(3.14159265*saturate((age-0.85)/6.35));
+        blastDisplacement += influence * (delta/max(0.1,distance)*(front+carry)*min(0.85,state.y*0.075)
+            +_BlastFlows[_BlastOffset+k].xyz*min(0.45,sphere.w*0.1)*refill);
+    }
+    return (local + curl + releaseCurl + _AnimationDirection * time - blastDisplacement)
+        * _NoiseWorldScale;
+}
+
+float GunnellWakeFraction(float3 p, int volume)
+{
+    // A single shared read replaces the per-shot loop in both view and light rays.
+    if (_WakeActive == 0) return 1.0;
+    float3 uvw = (p - _GridMin) / ((float3)_GridRes * _VoxelSize);
+    if (any(uvw <= 0.0) || any(uvw >= 1.0)) return 1.0;
+    float fraction=1;
+    [branch] switch(volume) {
+        case 0: fraction = _Wake0.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 1: fraction = _Wake1.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 2: fraction = _Wake2.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 3: fraction = _Wake3.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 4: fraction = _Wake4.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 5: fraction = _Wake5.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 6: fraction = _Wake6.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 7: fraction = _Wake7.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 8: fraction = _Wake8.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 9: fraction = _Wake9.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 10: fraction = _Wake10.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 11: fraction = _Wake11.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 12: fraction = _Wake12.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 13: fraction = _Wake13.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 14: fraction = _Wake14.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 15: fraction = _Wake15.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 16: fraction = _Wake16.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 17: fraction = _Wake17.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 18: fraction = _Wake18.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+        case 19: fraction = _Wake19.SampleLevel(sampler_linear_clamp, uvw, 0).x; break;
+    }
+    fraction = saturate(fraction);
+    // Optical response of the transported fraction: trace dilution along a
+    // long tunnel must not make it opaque before the gas folds have arrived.
+    return smoothstep(0.26, 0.86, fraction);
+}
+
+float4 GunnellSampleLightingAtlas(float3 uvw, int volume)
+{
+    float4 value=float4(1,0,1,0);
+    [branch] switch(volume) {
+        case 0: value = _Light0.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 1: value = _Light1.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 2: value = _Light2.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 3: value = _Light3.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 4: value = _Light4.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 5: value = _Light5.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 6: value = _Light6.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 7: value = _Light7.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 8: value = _Light8.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 9: value = _Light9.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 10: value = _Light10.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 11: value = _Light11.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 12: value = _Light12.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 13: value = _Light13.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 14: value = _Light14.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 15: value = _Light15.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 16: value = _Light16.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 17: value = _Light17.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 18: value = _Light18.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+        case 19: value = _Light19.SampleLevel(sampler_linear_clamp, uvw, 0); break;
+    }
+    return value;
+}
+
+float3 GunnellLightingUV(float3 uvw,int volume,float4 layout)
+{
+    float3 offset=float3(0,0,layout.w);
+    float3 halfTexel=_VolumeLightingTexel[volume].xyz;
+    // Do not bilinearly blend the last sunlight slice with local radiance.
+    return clamp(saturate(uvw)*layout.xyz+offset,offset+halfTexel,offset+layout.xyz-halfTexel);
+}
+
+float4 GunnellSampleLight(float3 uvw,int volume)
+{
+    return GunnellSampleLightingAtlas(GunnellLightingUV(uvw,volume,_VolumeSunLayout[volume]),volume);
+}
+
+float GunnellCloudDensity(float3 pos, float lod, out float2 occ, out float3 uvw, int volume)
+{
+    uvw = (pos-_GridMin)/((float3)_GridRes*_VoxelSize);
+    occ = 0;
+    if (any(pos < _VolumeActiveMin[volume].xyz) || any(pos > _VolumeActiveMax[volume].xyz)) return 0;
+    if (any(uvw<0) || any(uvw>1)) return 0;
+    occ = GunnellOccTrilinear(uvw, volume);
+    if (occ.x<=0.001 || occ.y<=0.5) return 0;
+    float2 noise = GunnellSampleNoise(GunnellNoiseCoordinates(pos, volume),lod);
+    float density = GunnellDensity(pos,occ,noise.x,noise.y, volume);
+    if (_BlastWakeActive == 0) density *= GunnellBlastCarve(pos,noise.y,volume);
+    return density * GunnellWakeFraction(pos, volume) * _Fade;
+}
+
+float GunnellUnionDensity(float3 pos, float lod, uint candidates)
+{
+    float density = 0;
+    [loop] while(candidates!=0) {
+        int volume=firstbitlow(candidates);
+        candidates &= candidates-1;
+        float2 occ; float3 uvw;
+        density=max(density,GunnellCloudDensity(pos,lod,occ,uvw, volume));
+        // Cloud density is saturated before multiplying bounded wake/fade.
+        // Once the union reaches its exact upper bound no other cloud can add gas.
+        if (density >= 1.0) break;
+    }
+    return density;
+}
+
+float GunnellSceneVisibility(float3 pos)
+{
+    if (_SceneShadowsEnabled == 0) return 1.0;
+    int cascade = _SceneShadowCascadeCount > 1 ? (int)ComputeCascadeIndex(pos) : 0;
+    if (cascade >= _SceneShadowCascadeCount) return 1.0;
+    float3 coord = mul(_MainLightWorldToShadow[cascade], float4(pos, 1.0)).xyz;
+    if (any(coord.xy < 0) || any(coord.xy > 1) || coord.z <= 0 || coord.z >= 1) return 1.0;
+    float visibility;
+    if (_MainLightShadowParams.y > 0.0)
+    {
+        // Four bilinear comparison taps, cached in the world-space light grid.
+        float2 offset = _MainLightShadowmapSize.xy * 0.75;
+        visibility = 0.25 * (
+            SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture, sampler_LinearClampCompare, coord + float3(-offset.x,-offset.y,0))
+            + SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture, sampler_LinearClampCompare, coord + float3(offset.x,-offset.y,0))
+            + SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture, sampler_LinearClampCompare, coord + float3(-offset.x,offset.y,0))
+            + SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture, sampler_LinearClampCompare, coord + float3(offset.x,offset.y,0)));
+    }
+    else visibility = SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture, sampler_LinearClampCompare, coord);
+    float3 toCamera = pos - _CameraWorldPos;
+    float fade = saturate(dot(toCamera,toCamera) * _MainLightShadowParams.z + _MainLightShadowParams.w);
+    return lerp(1.0, visibility, _MainLightShadowParams.x * (1.0 - fade));
+}
+
+// Autosombra en espacio de mundo. El feature programa su reconstrucción con
+// una caché independiente por cámara; la marcha consulta sólo nubes vecinas.
+[numthreads(4, 4, 4)]
+void CS_LightingVolume(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint3)_LightGridRes)) return;
+    int volume = _LightingIndex;
+    float3 uvw = ((float3)id + 0.5) / _LightGridRes;
+    float2 occupancy = GunnellOccTrilinear(uvw, volume);
+    if (occupancy.x <= 0.001 || occupancy.y <= 0.5)
+    {
+        _RWLightVolume[id] = float4(1.0, 0.0, 1.0, 0.0);
+        return;
+    }
+    float3 pos = _GridMin + uvw * (float3)_GridRes * _VoxelSize;
+    float tau = 0.0;
+    float3 lightDir = normalize(_SunDirection);
+    float lightJitter = (GunnellHash((int3)id, 941) - 0.5) * 0.8;
+    int lightSteps = _Stylization >= 0.999 ? min(_LightStepCount, 6) : _LightStepCount;
+    float lightStep = _LightStepSize * (float)_LightStepCount / max(lightSteps, 1);
+    for (int i = 0; i < 16; i++)
+    {
+        if (i >= lightSteps) break;
+        float3 lp = pos + lightDir * ((i + 0.5 + lightJitter) * lightStep);
+        // The lighting field sees the same union as the view ray, including
+        // smoke in neighbouring clouds rather than an isolated layer.
+        float density = GunnellUnionDensity(lp,0.5,(uint)_VolumeLightingNeighbours[volume].x);
+        tau += density * _ShadowDensity * lightStep;
+    }
+    float transmission = exp(-tau * max(0.001, _Absorption + _Scattering));
+    // Successive scattering orders attenuate more slowly. Cache the bounded
+    // approximation once per light voxel instead of marching extra light rays.
+    // Technique reference: https://github.com/TylerDodds/VolumetricCloudsTutorial
+    float firstDiffuse = sqrt(transmission);
+    float diffuse = 0.55 * firstDiffuse + 0.20 * sqrt(firstDiffuse);
+    float pigment = 0.5;
+    if (_Stylization > 0.001)
+    {
+        // World-space paint guide: perturb broad tonal transitions while
+        // retaining physical transmission in x (PainterlyLighting approach).
+        float3 paintCoordinates = GunnellNoiseCoordinates(pos, volume);
+        // Painterly cloud work uses broad masses with finer edge breakup. Keep
+        // both brush scales in the advected volume coordinates so the pigment
+        // moves with the smoke instead of swimming with the camera.
+        float3 brushCoordinates = float3(
+            dot(paintCoordinates, float3(0.8, 0.0, 0.6)) * 0.55,
+            paintCoordinates.y * 1.65,
+            dot(paintCoordinates, float3(-0.6, 0.0, 0.8)) * 1.25);
+        float broadBrush = GunnellValueNoise(brushCoordinates, 6, 1237);
+        float fineBrush = GunnellValueNoise(brushCoordinates, 13, 2297);
+        float layeredBrush = broadBrush * 0.76 + fineBrush * 0.24;
+        pigment = smoothstep(0.30, 0.70, layeredBrush);
+        diffuse = pigment;
+
+    }
+    // x = transmisión SIEMPRE (antes el estilizado guardaba ahí el pigmento, y al
+    // usarlo como atenuación el sombreado colapsaba a un marrón plano).
+    _RWLightVolume[id] = float4(transmission, diffuse,
+        _ReceiveSceneShadows != 0 ? GunnellSceneVisibility(pos) : 1.0, 0.0);
+}
+
+float3 GunnellLocalRadiance(float3 uvw, int volume)
+{
+    if (_LocalLightCount == 0) return 0;
+    return GunnellSampleLightingAtlas(GunnellLightingUV(uvw,volume,_VolumeLocalLayout[volume]),volume).rgb;
+}
+
+// Cache coloured incident radiance in world space, shared by all view-ray steps.
+[numthreads(4,4,4)]
+void CS_LocalLighting(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= (uint3)_LocalGridRes)) return;
+    uint3 target=id+uint3(0,0,_LocalLightZOffset);
+    if (_LocalLightCount == 0) { _RWLocalLight[target] = 0; return; }
+    int volume = _LightingIndex;
+    float3 uvw = ((float3)id + 0.5) / _LocalGridRes;
+    float2 occupancy = GunnellOccTrilinear(uvw,_LightingIndex);
+    float3 radiance = 0;
+    if (occupancy.x > 0.001 && occupancy.y > 0.5)
+    {
+        float3 pos = _GridMin + uvw * (float3)_GridRes * _VoxelSize;
+        for (int light=0; light<8; light++)
+        {
+            if (light >= _LocalLightCount) break;
+            if (((int)_LocalColors[light].w & (1 << _LightingIndex)) == 0) continue;
+            float3 delta = _LocalPositions[light].xyz-pos;
+            float distanceSquared = dot(delta,delta);
+            float distance = sqrt(max(distanceSquared,0.0001));
+            float3 direction = delta/distance;
+            float rangeFalloff = saturate(1.0-distanceSquared / max(0.001,_LocalPositions[light].w*_LocalPositions[light].w));
+            float attenuation = rangeFalloff*rangeFalloff / max(distanceSquared,1.0);
+            if (_LocalParams[light].y > 0.5)
+            {
+                float cone = saturate((dot(-direction,_LocalDirections[light].xyz)-_LocalDirections[light].w)
+                    / max(0.001,_LocalParams[light].x-_LocalDirections[light].w));
+                attenuation *= cone*cone;
+            }
+            if (attenuation <= 0.00001) continue;
+            float visibility = 1.0;
+            if (_LocalShadowsEnabled != 0 && _LocalParams[light].z >= 0)
+                visibility = AdditionalLightRealtimeShadow((int)_LocalParams[light].z,pos,direction);
+            if (visibility <= 0.001) continue;
+            float stepLength = min(distance, max(1.0,_LightStepSize*_LightStepCount)) / max(1,_LocalLightSteps);
+            float tau = 0;
+            for (int sample=0; sample<8; sample++)
+            {
+                if (sample >= _LocalLightSteps) break;
+                tau += GunnellUnionDensity(pos+direction*((sample+0.5)*stepLength),0.75,
+                    (uint)_VolumeLightingNeighbours[_LightingIndex].x)*_ShadowDensity*stepLength;
+            }
+            float transmission = exp(-tau*max(0.001,_Absorption+_Scattering));
+            float cosine = dot(direction,normalize(_CameraWorldPos-pos));
+            float scattering = transmission*GunnellPhase(_PhaseFunc,cosine,_PhaseG)
+                + _MultipleScattering*(0.55*sqrt(transmission)+0.20*sqrt(sqrt(transmission)))/12.5663706;
+            radiance += _LocalColors[light].rgb*attenuation*visibility*scattering*_LocalLightStrength;
+        }
+    }
+    _RWLocalLight[target] = float4(radiance,0);
+}
+
+float3 GunnellSource(float3 sp, float2 occ, float3 uvw, float noiseLod,
+    float sampleDensity, float3 lightDir, float p, float extinction, float transmittance,
+    bool fineDetail, out float pigment, int volume)
+{
+    float4 lighting = GunnellSampleLight(uvw, volume);
+    pigment = lighting.y;
+    // `lighting.x` es siempre la transmisión.
+    float lightAtten = saturate(lighting.x);
+    float densityRelief = 1.0;
+    float fineShadowWeight = saturate(1.5 - noiseLod) * smoothstep(0.2, 0.6, transmittance);
+    if (fineDetail && fineShadowWeight > 0.01)
+    {
+        float3 lp = sp + lightDir * 0.18;
+        float3 luvw = (lp - _GridMin) / ((float3)_GridRes * _VoxelSize);
+        float2 lOcc = all(luvw >= 0.0) && all(luvw <= 1.0)
+            ? GunnellOccTrilinear(luvw, volume) : 0.0;
+        float2 lNoise = GunnellSampleNoise(GunnellNoiseCoordinates(lp, volume), noiseLod);
+                        float localDensity = GunnellDensity(lp, lOcc, lNoise.x, lNoise.y, volume);
+                        if (_BlastWakeActive == 0) localDensity *= GunnellBlastCarve(lp,lNoise.y,volume);
+                        localDensity *= GunnellWakeFraction(lp, volume) * _Fade;
+        // Do not mistake a solid contact for an illuminated gas lobe.
+        float contactFade = smoothstep(0.45, 0.95, min(occ.y, lOcc.y));
+        densityRelief = lerp(1.0, clamp(1.0 + (sampleDensity - localDensity) * 4.2,
+            0.58, 1.28), fineShadowWeight * _LobeContrast * contactFade);
+        float localShadow = exp(-localDensity * _VolumeDensity * extinction * 0.35);
+        lightAtten *= lerp(1.0, localShadow, fineShadowWeight);
+    }
+    // Neutral ambient and warm sunlight separate the shadow/highlight
+    // colors; deeper occlusion preserves the valleys between lobes.
+    float ambientOcclusion = lerp(0.24, 1.0, sqrt(max(lightAtten, 0.0001)));
+    // Gentle interior shading supplements the physical light
+    // volume without creating a dark sculpted rim around gas.
+    float holeShade = 1.0; // physical wake shadows are in the lighting volume
+    ambientOcclusion *= lerp(1.0, holeShade, 0.85);
+    lightAtten *= holeShade;
+    float height = saturate((sp.y - _SmokeOrigin.y) * 1.35 / max(_SphereRadius, 0.1));
+    float3 ambientTint = lerp(_GroundAmbientTint, _SkyAmbientTint, smoothstep(0.0, 0.78, height));
+    // A cheap porosity response gives thin illuminated folds more
+    // contrast. It affects radiance only: FPS occlusion is unchanged.
+    float powder = lerp(1.0, sampleDensity / (sampleDensity + 0.16), _PowderStrength);
+    float diffuseLight = _Stylization > 0.001
+        ? 0.55 * sqrt(lightAtten) + 0.20 * sqrt(sqrt(lightAtten)) : lighting.y;
+    float sunlight = lightAtten * p * powder
+        + diffuseLight * _MultipleScattering * (1.0 / 12.5663706);
+    float environmentVisibility = saturate(lighting.z);
+    float3 source = _SmokeColor * ambientTint * _Ambient * ambientOcclusion
+        * lerp(0.78, 1.0, environmentVisibility)
+        + (_SunColor * sunlight * environmentVisibility + GunnellLocalRadiance(uvw,volume)) * (_Scattering / extinction);
+    // Integral premultiplicada: cada segmento aporta según su opacidad.
+    // El relleno ambiental ya no crece con el número de pasos ni lava el relieve.
+    // Integrar el relieve a través del gas evita fijar un único normal
+    // a todo el píxel, que producía manchas con contornos rígidos.
+    // El relieve fino (microsombras entre lóbulos) también en
+    // estilizado: con el clamp estrecho anterior (±6%) la superficie
+    // quedaba demasiado lisa y los lóbulos leían como arcilla.
+    // Smooth compression retains rolled highlight/shadow transitions instead
+    // of clipping broad painted patches to a constant value. Same density reads.
+    float reliefDelta = densityRelief-1.0;
+    float paintedRelief = 1.0+reliefDelta/(1.0+abs(reliefDelta)*2.0);
+    float radianceRelief = lerp(densityRelief, paintedRelief, _Stylization);
+    return source * radianceRelief;
+}
+
+struct GunnellDetailSample
+{
+    int volume;
+    float density;
+    float2 occupancy;
+    float3 uvw;
+    float3 coarseSource;
+};
+
+// Grid traversal draws actual cell faces. It reads the connected arrival
+// field, shot transport and explosion field instead of adding a cube particle
+// system whose geometry could disagree with the simulated smoke.
+void GunnellRaymarchVoxels(float3 ro, float3 rd, float t0, float t1, int2 pix, uint rayCandidates)
+{
+    float t=max(0,t0)+0.0001;
+    float4 color=0;
+    float depth=1e5;
+    [loop] for(int step=0;step<512;step++) {
+        if(t>=t1) break;
+        float3 pos=ro+rd*t;
+        float next=t1;
+        float best=0;
+        float3 bestColor=0;
+        float bestFade=0;
+        uint candidates=rayCandidates;
+        [loop] while(candidates!=0) {
+            int volume=firstbitlow(candidates);
+            candidates &= candidates-1;
+            float3 gridMax=_GridMin+(float3)_GridRes*_VoxelSize;
+            if(any(pos<_GridMin) || any(pos>=gridMax)) {
+                float enter,exit;
+                if(GunnellRayBox(ro,rd,_GridMin,gridMax,enter,exit) && enter>t)
+                    next=min(next,enter);
+                continue;
+            }
+            int3 cell=(int3)floor((pos-_GridMin)/_VoxelSize);
+            float3 cellMin=_GridMin+(float3)cell*_VoxelSize;
+            float3 center=cellMin+_VoxelSize*0.5;
+            float3 uvw=((float3)cell+0.5)/(float3)_GridRes;
+            float2 occ=GunnellOccTrilinear(uvw, volume);
+            float3 inv=1.0/max(abs(rd),0.000001);
+            float3 exits=((rd>=0 ? cellMin+_VoxelSize : cellMin)-pos)*sign(rd)*inv;
+            exits=abs(rd)>0.000001 ? exits : 1e5;
+            next=min(next,t+max(0,min(exits.x,min(exits.y,exits.z))));
+            float remaining=GunnellWakeFraction(center, volume);
+            if (_BlastWakeActive == 0) remaining *= GunnellBlastCarve(center,0.5, volume);
+            if(occ.y<=0.5 || occ.x<=0.25+_Dissipation*0.65 || remaining<0.18 || _Fade<=0.01) continue;
+            float score=occ.x*remaining*_Fade;
+            if(score<=best) continue;
+            best=score; bestFade=_Fade;
+            float3 nearFaces=((rd>=0 ? cellMin : cellMin+_VoxelSize)-ro)*sign(rd)*inv;
+            nearFaces=abs(rd)>0.000001 ? nearFaces : -1e5;
+            float entry=max(nearFaces.x,max(nearFaces.y,nearFaces.z));
+            float3 face=float3(nearFaces.x>=entry,nearFaces.y>=entry,nearFaces.z>=entry);
+            float3 normal=-sign(rd)*face;
+            entry=max(entry,t0);
+            float3 hit=ro+rd*entry;
+            float3 edge=min(abs(hit-cellMin),abs(cellMin+_VoxelSize-hit));
+            edge=lerp(edge,_VoxelSize,face);
+            float outline=smoothstep(_VoxelSize*0.014,_VoxelSize*0.055,min(edge.x,min(edge.y,edge.z)));
+            float4 light=GunnellSampleLight(uvw, volume);
+            float shade=0.32+light.z*(0.50*saturate(dot(normal,normalize(_SunDirection)))+0.18*sqrt(saturate(light.x)));
+            float3 sceneTint = lerp(_GroundAmbientTint,_SkyAmbientTint,0.6)*0.32
+                + _SunColor*(shade-0.32)/3.3 + GunnellLocalRadiance(uvw,volume);
+            bestColor=float3(0.92,0.94,0.96)*sceneTint*lerp(0.76,1.0,outline);
+        }
+        if(best>0) {
+            color=float4(bestColor*bestFade,bestFade);
+            depth=t*saturate(dot(rd,_CameraForward));
+            break;
+        }
+        t=max(t+0.0001,next+0.0001);
+    }
+    _SmokeAlbedo[pix]=color;
+    _SmokeMask[pix]=float2(color.a,depth);
+}
+
+[numthreads(8, 8, 1)]
+void CS_Raymarch(uint3 id : SV_DispatchThreadID)
+{
+    int2 pix = (int2)id.xy;
+    if (pix.x >= (int)_BufferSize.x || pix.y >= (int)_BufferSize.y) return;
+
+    float2 uv = ((float2)pix + 0.5) / _BufferSize;
+    // pix.y=0 es la PARTE SUPERIOR de la pantalla: el composite lee el albedo con
+    // SAMPLE_TEXTURE2D_X, que voltea V en D3D/Metal, así que el texel (x,0) del
+    // buffer se pinta arriba. Para reconstruir la dirección del rayo en espacio de
+    // recorte (NDC, y hacia arriba) hay que voltear uv.y. `UNITY_UV_STARTS_AT_TOP`
+    // no está definido de forma fiable dentro de un compute, así que es incondicional.
+    uv.y = 1.0 - uv.y;
+    // _DepthTex es la cameraDepthTexture, que en GPU se almacena arriba-izquierda
+    // (D3D/Metal). Un SampleLevel CRUdo necesita la V "cruda" (la inversa de la de
+    // NDC) para leer la profundidad de la pantalla que corresponde a este píxel.
+    float2 uvTex = float2(uv.x, 1.0 - uv.y);
+    float sceneRaw = _DepthTex.SampleLevel(gPointClamp, uvTex, 0);
+    float sceneDist = 1e5;
+    if (sceneRaw < 1.0 - 1e-5)
+    {
+        float4 ndc = float4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, sceneRaw, 1.0);
+        float4 wp = mul(_CameraInvViewProj, ndc);
+        wp.xyz /= max(wp.w, 1e-5);
+        sceneDist = length(wp.xyz - _CameraWorldPos);
+    }
+
+    float4 ndcR = float4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, 0.5, 1.0);
+    float4 worldH = mul(_CameraToWorld, mul(_CameraInvProjection, ndcR));
+    float3 ro = _CameraWorldPos;
+    float3 rd = normalize(worldH.xyz / max(worldH.w, 1e-5) - ro);
+
+    float2 intervals[GUNNELL_MAX_VOLUMES];
+    int intervalCount=0;
+    uint rayCandidates=0;
+    [loop] for(int volume=0;volume<_VolumeCount;volume++) {
+        float enter,exit;
+        if(GunnellRayBox(ro,rd,_VolumeActiveMin[volume].xyz,_VolumeActiveMax[volume].xyz,enter,exit)) {
+            enter=max(0,enter); exit=min(exit,sceneDist);
+            if(exit>enter) {
+                intervals[intervalCount++]=float2(enter,exit);
+                rayCandidates |= 1u << volume;
+            }
+        }
+    }
+    if(intervalCount==0) {
+        _SmokeAlbedo[pix]=0; _SmokeMask[pix]=float2(0,1e5); return;
+    }
+    // Sort ray intervals, then budget only their covered union. Empty space
+    // between a nearby cloud and a distant cloud must not coarsen either one.
+    // Sort only actual intersections, not all supported slots.
+    [loop] for(int item=1;item<intervalCount;item++) {
+        float2 current=intervals[item]; int previous=item-1;
+        [loop] while(previous>=0) {
+            if(intervals[previous].x<=current.x) break;
+            intervals[previous+1]=intervals[previous]; previous--;
+        }
+        intervals[previous+1]=current;
+    }
+    float t0=intervals[0].x,t1=0,coveredLength=0;
+    [loop] for(int range=0;range<intervalCount;range++) {
+        if(intervals[range].x<1e5) {
+            coveredLength+=max(0,intervals[range].y-max(t1,intervals[range].x));
+            t1=max(t1,intervals[range].y);
+        }
+    }
+    // Merge overlapping intervals once, outside the integration loop.
+    int mergedCount=1;
+    [loop] for(int mergeIndex=1;mergeIndex<intervalCount;mergeIndex++) {
+        if(intervals[mergeIndex].x<=intervals[mergedCount-1].y)
+            intervals[mergedCount-1].y=max(intervals[mergedCount-1].y,intervals[mergeIndex].y);
+        else intervals[mergedCount++]=intervals[mergeIndex];
+    }
+    intervalCount=mergedCount;
+    if (_VoxelMode != 0) { GunnellRaymarchVoxels(ro,rd,t0,t1,pix,rayCandidates); return; }
+    // Beer-Lambert por segmento: radiancia premultiplicada y transmitancia.
+    float3 col = float3(0, 0, 0);
+    float refAlpha = 1.0;          // visibilidad del ref
+    float paintedShade = 0.0;
+    float paintedWeight = 0.0;
+    float thickness = 0.0;
+    float accumDensity = 0.0;
+    float firstHit = 1e5;
+    float carveMin = 1.0;
+    float peakDensity = 0.0;
+    bool touched = false;
+
+    if (t1 > t0)
+    {
+        // Enfocar las muestras en la nube, especialmente mientras nace. El
+        // margen cubre el máximo desplazamiento del SDF por ambas escalas de ruido.
+        // The occupied bounds include smoke that has flowed around an obstacle.
+        // A sphere intersection here would crop that connected propagation.
+        t0 = max(t0, 0.0);
+        t1 = min(t1, sceneDist);
+        bool nearMedium = t0 < 0.15;
+        int nearReserve = nearMedium ? min(16, _StepCount >> 2) : 0;
+        float viewStep = max(_StepSize, coveredLength / max(_StepCount - nearReserve, 1));
+        // Distant separated clouds must not coarsen the first cloud's surface
+        // or its bullet apertures. Reserve part of the existing step budget.
+        int frontReserve = _VolumeCount > 4 && intervalCount > 1 ? min(64,_StepCount >> 1) : 0;
+        float frontStep = max(_StepSize,(intervals[0].y-intervals[0].x)/max(frontReserve,1));
+        float coveredRemaining=coveredLength;
+        float jitter = (GunnellIGN(pix) - 0.5) * 0.9;
+        float t = t0;
+        // La fase y la autosombra deben compartir la dirección real del sol.
+        // De otro modo la nube se ilumina desde arriba incluso en contraluz.
+        float3 lightDir = normalize(_SunDirection);
+        float cosTheta = dot(rd, lightDir);
+        float p = GunnellPhase(_PhaseFunc, cosTheta, _PhaseG);
+        float extinction = max(1e-3, _Absorption + _Scattering);
+        col = float3(0, 0, 0);
+
+        for (int i = 0; i < 256; i++)
+        {
+            if (i >= _StepCount || t >= t1 || refAlpha < _AlphaThreshold) break;
+            bool within=false;
+            float nextInterval=1e5, intervalEnd=0;
+            [loop] for(int range=0;range<intervalCount;range++) {
+                bool inRange=t>=intervals[range].x && t<intervals[range].y;
+                within=within || inRange;
+                if(inRange) intervalEnd=max(intervalEnd,intervals[range].y);
+                if(intervals[range].x>t) nextInterval=min(nextInterval,intervals[range].x);
+            }
+            if(!within) { t=nextInterval; continue; }
+            // Integrate exact, clipped segments. A sample offset must not skip
+            // the gas between an interior camera and a nearby wall/character.
+            float budgetStep=frontReserve>0 ? max(_StepSize,coveredRemaining/max(_StepCount-i,1)) : viewStep;
+            if(i<frontReserve)budgetStep=min(budgetStep,frontStep);
+            float localStep=nearMedium ? lerp(min(budgetStep,max(_StepSize,0.035)),budgetStep,smoothstep(0.0,0.8,t)) : budgetStep;
+            float stepLength=min(localStep,min(t1,intervalEnd)-t);
+            coveredRemaining=max(0,coveredRemaining-stepLength);
+            float sampleT=t+(0.5+jitter)*stepLength;
+            float3 sp = ro + rd * sampleT;
+
+            float noiseLod=GunnellNoiseLod(sp);
+            float sampleDensity=0,sourceWeight=0,pigmentSum=0;
+            float3 sourceSum=0;
+            GunnellDetailSample detailSamples[2];
+            detailSamples[0] = (GunnellDetailSample)0;
+            detailSamples[1] = (GunnellDetailSample)0;
+            bool shareDetail = _OverlapDetailLimit > 0 && countbits(rayCandidates) > 2;
+            uint candidates=rayCandidates;
+            [loop] while(candidates!=0) {
+                int volume=firstbitlow(candidates);
+                candidates &= candidates-1;
+                float2 occ; float3 uvw;
+                float density=GunnellCloudDensity(sp,noiseLod,occ,uvw, volume);
+                if(density<=0.001) continue;
+                // Density union prevents duplicate gas in overlapping clouds.
+                // Smooth source weights retain both lighting fields at joins.
+                sampleDensity=max(sampleDensity,density);
+                float weight=density*density;
+                float pigment;
+                float3 source = GunnellSource(sp,occ,uvw,noiseLod,density,
+                    lightDir,p,extinction,refAlpha,!shareDetail,pigment, volume);
+                sourceSum += weight * source;
+                pigmentSum += weight * pigment; sourceWeight += weight;
+                if (shareDetail && density > detailSamples[1].density)
+                {
+                    int slot = density > detailSamples[0].density ? 0 : 1;
+                    if (slot == 0) detailSamples[1] = detailSamples[0];
+                    detailSamples[slot].volume = volume;
+                    detailSamples[slot].density = density;
+                    detailSamples[slot].occupancy = occ;
+                    detailSamples[slot].uvw = uvw;
+                    detailSamples[slot].coarseSource = source;
+                }
+                // The density query already applied the wake. This second read
+                // is needed only by the transported-hole debug visualization.
+                if (_DebugForce == 5) carveMin=min(carveMin,GunnellWakeFraction(sp, volume));
+            }
+            if(sampleDensity<=0.001) { t+=stepLength; continue; }
+            if (shareDetail)
+            {
+                // Retain ALL cached sun/local colours and shadow contributions.
+                // Only the expensive neighbouring noise/occupancy/wake reads are
+                // shared through the two densest contributors' weighted correction.
+                // With one or two contributors this reproduces the original sum.
+                float detailWeight = 0;
+                float3 detailCorrection = 0;
+                [unroll] for (int detail = 0; detail < 2; detail++)
+                {
+                    GunnellDetailSample selected = detailSamples[detail];
+                    if (selected.density <= 0.001) continue;
+                    float pigment;
+                    float3 detailed = GunnellSource(sp,selected.occupancy,selected.uvw,noiseLod,
+                        selected.density,lightDir,p,extinction,refAlpha,true,pigment,selected.volume);
+                    float weight = selected.density * selected.density;
+                    detailWeight += weight;
+                    detailCorrection += weight * (detailed - selected.coarseSource);
+                }
+                sourceSum = max(0.0, sourceSum + detailCorrection * (sourceWeight / max(detailWeight,0.0001)));
+            }
+            peakDensity=max(peakDensity,sampleDensity); touched=true;
+            float opticalDepth=sampleDensity*_VolumeDensity*extinction*stepLength;
+            float segmentAlpha=1-exp(-opticalDepth);
+            accumDensity+=opticalDepth; thickness+=stepLength*sampleDensity;
+            if(firstHit>1e4) firstHit=t;
+            if(_Stylization>0.001) {
+                float skinWeight=refAlpha*refAlpha*refAlpha*segmentAlpha;
+                paintedWeight+=skinWeight;
+                paintedShade+=skinWeight*pigmentSum/max(sourceWeight,0.0001);
+            }
+            col+=refAlpha*segmentAlpha*sourceSum/max(sourceWeight,0.0001);
+            refAlpha *= 1.0 - segmentAlpha;
+            t += stepLength;
+        }
+    }
+
+    // _Fade adelgaza la cobertura al disipar. El buffer guarda color PREMULTIPLICADO
+    // y el composite mezcla con Blend One OneMinusSrcAlpha.
+    // El túnel ya se aplicó muestra por muestra a la densidad. Multiplicar aquí
+    // por el mínimo de todo el rayo borraba el píxel entero al disparar.
+    float alpha = touched ? 1.0 - saturate(refAlpha) : 0.0;
+    if (_Stylization > 0.001)
+    {
+        float coverage = 1.0 - saturate(refAlpha);
+        // Retain physical radiance and opacity, with softly blended paint bands.
+        float3 base = col / max(coverage, 1e-4);
+        float lum = max(dot(base,float3(0.2126,0.7152,0.0722)),0.0);
+        float guide = paintedShade / max(paintedWeight,0.0001);
+        float value = lum / (lum + 0.45);
+        float guided = value + (guide-0.5)*min(0.065,_DetailStrength*0.45);
+        float bands = 0.08 + 0.22*smoothstep(0.16,0.24,guided)
+            + 0.28*smoothstep(0.38,0.46,guided) + 0.34*smoothstep(0.61,0.69,guided);
+        // Sun-facing rolls retain more of the physical gradient, so the view
+        // from above does not turn into one pale, featureless paint mass.
+        float paintMix = 0.60*(1.0-0.65*smoothstep(0.48,0.74,value));
+        float paintedValue = lerp(value,bands,paintMix);
+        float paintedLum = 0.45*paintedValue/max(1.0-paintedValue,0.05);
+        paintedLum *= 1.0+(guide-0.5)*min(0.05,_DetailStrength*0.25);
+        paintedLum = lerp(lum,paintedLum,smoothstep(0.18,0.70,coverage));
+        paintedLum *= smoothstep(0.0,0.025,lum);
+        float3 hue = _SmokeColor/max(dot(_SmokeColor,float3(0.2126,0.7152,0.0722)),0.001);
+        float3 shadowHue = _StylizedShadow/max(dot(_StylizedShadow,float3(0.2126,0.7152,0.0722)),0.001);
+        float3 cream = lerp(_StylizedHighlight,float3(1,1,1),0.22);
+        float3 warmHue = cream/max(dot(cream,float3(0.2126,0.7152,0.0722)),0.001);
+        float3 pigmentHue = lerp(shadowHue,hue,smoothstep(0.10,0.48,value));
+        pigmentHue = lerp(pigmentHue,warmHue,smoothstep(0.46,0.84,value)*0.72);
+        float3 painted = pigmentHue*paintedLum;
+        // Keep coloured scene light after the painterly palette conversion.
+        float3 illuminationHue = (base/max(lum,0.001))/max(hue,0.05);
+        painted *= lerp(1.0,clamp(illuminationHue,0.15,3.0),0.85);
+        // Very restrained warm/cool pigment breakup gives the broad forms a
+        // hand-painted finish without replacing the physical light gradient.
+        float midtoneMask = smoothstep(0.12,0.42,value) * (1.0-smoothstep(0.78,0.96,value));
+        float pigmentShift = (guide-0.5) * 0.16 * midtoneMask;
+        painted *= 1.0 + pigmentShift * float3(1.0,0.58,0.18);
+        // Painted surface bands fade into a continuous medium on entry. This
+        // follows the first actual gas segment, including moving bullet wakes.
+        float interior = (1.0-smoothstep(0.12,0.8,firstHit))*smoothstep(0.65,0.95,coverage);
+        col = lerp(col, painted * coverage, _Stylization*(1.0-interior*0.7));
+    }
+    // DEPURACIÓN: _DebugForce!=0 vuelca un gris directo. mask.g=0 para que el
+    // composite lo acepte siempre (sceneEye-0 > 0 -> aceptado).
+    if (_DebugForce != 0)
+    {
+        float g;
+        if (_DebugForce == 1) g = refAlpha;
+        else if (_DebugForce == 2) g = saturate(thickness);
+        else if (_DebugForce == 3) g = saturate(accumDensity);
+        else if (_DebugForce == 4)
+        {
+            // Densidad máxima muestreada a lo largo del rayo -> ve la forma cruda
+            // de getDensity sin la exponencial de extinción.
+            g = saturate(peakDensity);
+        }
+        else if (_DebugForce == 5)
+        {
+            // carveMin: 1 = densidad íntegra, 0 = espacio despejado por un disparo.
+            g = carveMin;
+        }
+        else if (_DebugForce == 6)
+        {
+            // Nº de agujeros vistos por el píxel y si el buffer llegó.
+            g = _BulletHoleCount > 0 ? 1.0 : 0.25;
+        }
+        else if (_DebugForce == 7)
+        {
+            // Luminancia normalizada del sombreado físico (la que alimenta la
+            // rampa de la paleta estilizada). Sirve para medir su rango real.
+            float cov = max(1.0 - saturate(refAlpha), 1e-4);
+            g = saturate(dot(col, float3(0.2126, 0.7152, 0.0722)) / cov);
+        }
+        else g = saturate(firstHit < 1e4 ? 1.0 : 0.0);
+        _SmokeAlbedo[pix] = float4(g, g, g, 1.0);
+        _SmokeMask[pix] = float2(1.0, 0.0);
+        return;
+    }
+    // mask.g en profundidad DE VISTA (no distancia de rayo) para compararla
+    // con LinearEyeDepth en el composite.
+    float eyeDepth = firstHit * saturate(dot(rd, _CameraForward));
+
+
+    _SmokeAlbedo[pix] = float4(max(col,0),alpha);
+    _SmokeMask[pix] = float2(alpha,eyeDepth);
+}
+
+// Integrate the visible gas along the receiver-to-sun ray. This projects onto
+// floors, walls and meshes without a ground-plane decal or proxy sphere.
+[numthreads(8, 8, 1)]
+void CS_SceneShadow(uint3 id : SV_DispatchThreadID)
+{
+    int2 pix = (int2)id.xy;
+    if (any(pix >= (int2)_BufferSize)) return;
+    float2 texUV = (float2(pix) + 0.5) / _BufferSize;
+    float raw = _DepthTex.SampleLevel(gPointClamp, texUV, 0);
+    _SmokeSceneShadow[pix] = float2(1.0, 1e4);
+    #if UNITY_REVERSED_Z
+    if (raw <= 0.000001) return;
+    #else
+    if (raw >= 0.999999) return;
+    #endif
+    float2 ndcUV = texUV;
+    #if UNITY_UV_STARTS_AT_TOP
+    ndcUV.y = 1.0 - ndcUV.y;
+    #endif
+    float4 world = mul(_CameraInvViewProj, float4(ndcUV * 2.0 - 1.0, raw, 1.0));
+    float3 receiver = world.xyz / max(world.w, 0.000001);
+    float eye = dot(receiver - _CameraWorldPos, _CameraForward);
+    _SmokeSceneShadow[pix] = float2(1.0, eye);
+    // The final smoke composite hides this receiver almost entirely. Avoid
+    // marching a second density ray to shade the invisible ground behind it.
+    if (_ViewSmokeAlbedo.SampleLevel(gPointClamp, texUV, 0).a >= 0.99) return;
+    float3 direction = normalize(_SunDirection);
+    float3 origin = receiver + direction * 0.08;
+    float2 intervals[GUNNELL_MAX_VOLUMES];
+    int intervalCount=0;
+    uint shadowCandidates=0;
+    float start = 1e5, end = 0.0;
+    [loop] for (int volume = 0; volume < _VolumeCount; volume++)
+    {
+        float enter, exit;
+        if (GunnellRayBox(origin, direction, _VolumeActiveMin[volume].xyz, _VolumeActiveMax[volume].xyz, enter, exit)
+            && exit > max(0.0, enter))
+        {
+            intervals[intervalCount++] = float2(max(0.0, enter), exit);
+            shadowCandidates |= 1u << volume;
+            start = min(start, max(0.0,enter)); end = max(end, exit);
+        }
+    }
+    if (end <= start) return;
+    float stepSize = max(0.16, (end - start) / max(1,_SceneShadowSteps));
+    float t = start + (0.5 + (GunnellIGN(pix) - 0.5) * 0.65) * stepSize;
+    float tau = 0.0;
+    [loop] for (int step = 0; step < 48; step++)
+    {
+        if (step >= _SceneShadowSteps || t >= end || tau > 4.0) break;
+        bool covered = false;
+        float next = 1e5;
+        [loop] for (int range = 0; range < intervalCount; range++)
+        {
+            covered = covered || (t >= intervals[range].x && t < intervals[range].y);
+            if (intervals[range].x > t) next = min(next, intervals[range].x);
+        }
+        if (!covered) { t = next + stepSize * 0.5; continue; }
+        float density = GunnellUnionDensity(origin + direction * t, 1.0,shadowCandidates);
+        tau += density * stepSize * _ShadowDensity * max(0.001, _Absorption + _Scattering);
+        t += stepSize;
+    }
+    // Preserve ambient illumination and avoid darkening existing solid shadows twice.
+    float blocked = (1.0 - exp(-tau)) * _SmokeCastShadowStrength * GunnellSceneVisibility(receiver);
+    _SmokeSceneShadow[pix] = float2(1.0 - blocked, eye);
+}
