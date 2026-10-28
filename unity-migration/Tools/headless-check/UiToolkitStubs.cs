@@ -17,6 +17,8 @@ namespace UnityEngine.UIElements
     public enum DisplayStyle { Flex, None }
     public enum AngleUnit { Degree, Gradian, Radian, Turn }
     public enum TrickleDown { NoTrickleDown, TrickleDown }
+    public enum PickingMode { Position, Ignore }
+    public class ITransform { public Quaternion rotation; public Vector3 position; public Vector3 scale; }
 
     public struct Length
     {
@@ -112,6 +114,8 @@ namespace UnityEngine.UIElements
 
     public class VisualElement
     {
+        public PickingMode pickingMode;
+        public ITransform transform { get; } = new ITransform();
         public string name;
         public readonly IStyle style = new StyleImpl();
         public readonly IResolvedStyle resolvedStyle = new ResolvedImpl();
@@ -135,6 +139,8 @@ namespace UnityEngine.UIElements
 
     public class Label : VisualElement
     {
+        public Label() { }
+        public Label(string text) { this.text = text; }
         public string text;
     }
 
@@ -165,3 +171,18 @@ namespace UnityEngine.UIElements
         public VisualTreeAsset visualTreeAsset;
     }
 }
+
+namespace Nyc.Gameplay
+{
+    public class DroneWeaponSystem : UnityEngine.MonoBehaviour
+    {
+        public HelicopterController controller;
+        public CameraManager cameras;
+        public bool HasOverlay;
+        public UnityEngine.Vector2 LeftAim;
+        public UnityEngine.Vector2 RightAim;
+        public bool LeftTrigger;
+        public bool RightTrigger;
+    }
+}
+

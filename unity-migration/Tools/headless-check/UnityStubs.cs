@@ -210,6 +210,7 @@ namespace UnityEngine
         public void Play(string stateName) { }
     }
 
+    public class AudioListener : Component { }
     public class MonoBehaviour : Component
     {
         public bool enabled;
@@ -456,3 +457,4 @@ namespace UnityEngine.Networking
     }
     public class DownloadHandler { public string text; }
 }
+
