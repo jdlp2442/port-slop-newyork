@@ -180,6 +180,31 @@ public static class Program
         Console.WriteLine($"traffic stats: active {active}, nan {nanAgents}, stopped {stuck}, " +
                           $"avg {sumSpeed / Mathf.Max(1, active):F2} m/s, max {maxSpeed:F2} m/s");
 
+        // ---- Traffic tick cost attribution (private sections, via reflection) ----
+        {
+            var tType = typeof(TrafficSystem);
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            Vector2 focusPt = new Vector2(0f, 0f);
+            long Measure(System.Reflection.MethodInfo m, bool takesFocus)
+            {
+                var sp = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 0; i < 1800; i++)
+                    m.Invoke(traffic, takesFocus ? new object[] { focusPt } : null);
+                sp.Stop();
+                return sp.ElapsedMilliseconds;
+            }
+            var mLaneHeads = tType.GetMethod("BuildLaneHeads", flags);
+            var mContacts = tType.GetMethod("ResolveVehicleContacts", flags);
+            var mRender = tType.GetMethod("Render", flags);
+            var mCount = tType.GetMethod("CountActive", flags);
+            var mMaintain = tType.GetMethod("MaintainPopulation", flags);
+            var mRebuild = tType.GetMethod("RebuildSpawnCandidates", flags);
+            Console.WriteLine($"tick attribution (1800 calls): laneHeads {Measure(mLaneHeads, false)} ms, " +
+                              $"contacts {Measure(mContacts, false)} ms, render {Measure(mRender, false)} ms, " +
+                              $"count {Measure(mCount, false)} ms, maintain {Measure(mMaintain, true)} ms, " +
+                              $"rebuildSpawn {Measure(mRebuild, true)} ms");
+        }
+
         // ---- Traffic & RoadNetwork deterministic parity tests (traffic.test.cjs) ----
         var netSnap = net.CaptureSnapshot();
         var trafSnap = traffic.CaptureSnapshot(1800);
@@ -228,9 +253,9 @@ public static class Program
         Console.WriteLine("traffic determinism & lane query parity: verified against js/traffic.js (100% pass)");
 
         // ---- Explicit parity fixtures (shared contract with js/traffic.js) ----
-        string fixturePath = System.IO.Path.Combine("Tools", "parity", "traffic-fixtures.json");
-        if (!System.IO.File.Exists(fixturePath))
-            throw new Exception($"Traffic parity fixture manifest missing: {fixturePath}");
+        string fixturePath = ResolveProjectFile(System.IO.Path.Combine("Tools", "parity", "traffic-fixtures.json"));
+        if (fixturePath == null || !System.IO.File.Exists(fixturePath))
+            throw new Exception("Traffic parity fixture manifest missing: Tools/parity/traffic-fixtures.json");
         var fixtureRoot = JObject.Parse(System.IO.File.ReadAllText(fixturePath));
         if ((string)fixtureRoot["coordinateFrame"] != "x,y,-z" || (int?)fixtureRoot["seed"] != 10019)
             throw new Exception("Traffic parity fixture contract has an invalid coordinate frame or seed");
@@ -266,6 +291,20 @@ public static class Program
             }
         }
         Console.WriteLine($"connection decision fixtures: {decisionCases} deterministic lane/roll cases");
+
+        // Dynamic player/traffic contact contract: instanced agents must still produce a closing
+        // impulse even though they are not PhysX GameObjects.
+        var collisionTarget = traffic.Agents.FirstOrDefault(a => a.Active);
+        if (!collisionTarget.Active)
+            throw new Exception("Traffic collision fixture has no active target");
+        Vector2 probeForward = new Vector2(Mathf.Sin(collisionTarget.Heading), Mathf.Cos(collisionTarget.Heading));
+        Vector2 probePosition = collisionTarget.Position + probeForward * 2.0f;
+        float probeSpeed = 12f, probeHeading = collisionTarget.Heading + Mathf.PI, probeVx = 0f, probeVz = 0f, probeAngular = 0f;
+        float impact = traffic.ResolvePlayerVehicleCollision(ref probePosition, ref probeSpeed, ref probeHeading,
+            ref probeVx, ref probeVz, ref probeAngular, 0.86f, 2.18f);
+        if (impact <= 0f || probeSpeed >= 12f)
+            throw new Exception("Player/traffic collision fixture did not produce an impulse");
+        Console.WriteLine($"dynamic vehicle collision fixture: impact {impact:F2} m/s, speed {probeSpeed:F2} m/s");
 
         // ---- BRG pilot contract (device-independent validation) ----------------
         if (!Nyc.Gameplay.Traffic.NycVehicleBRGBackend.ValidateMetadataLayout(512, out var brgLayoutError))
@@ -334,6 +373,29 @@ public static class Program
         Console.WriteLine($"map projection round-trip at 5th/42: ({back.x:F2},{back.y:F2})");
 
         return nan == 0 && badUv == 0 && verts > 100000 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Resolves a project-relative path (e.g. Tools/parity/traffic-fixtures.json) no matter which
+    /// directory the harness is launched from. Walks up from the assembly location and then from the
+    /// current directory until the relative path exists, so `dotnet run` works both from the
+    /// project root and from Tools/headless-check.
+    /// </summary>
+    static string ResolveProjectFile(string relativePath)
+    {
+        var candidates = new List<string>();
+        foreach (string start in new[]
+                 {
+                     AppContext.BaseDirectory ?? ".",
+                     System.IO.Directory.GetCurrentDirectory()
+                 })
+        {
+            for (var dir = new System.IO.DirectoryInfo(System.IO.Path.GetFullPath(start)); dir != null; dir = dir.Parent)
+                candidates.Add(System.IO.Path.Combine(dir.FullName, relativePath));
+        }
+        foreach (string candidate in candidates)
+            if (System.IO.File.Exists(candidate)) return candidate;
+        return null;
     }
 }
 

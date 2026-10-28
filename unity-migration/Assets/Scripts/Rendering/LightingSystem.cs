@@ -28,8 +28,8 @@ namespace Nyc.Rendering
         [SerializeField] ReflectionProbe environmentProbe;
 
         [Header("Day / night cycle")]
-        [SerializeField] bool runCycle;
-        [SerializeField, Range(0f, 24f)] float hour = 17.75f;
+        [SerializeField] bool runCycle = false;
+        [SerializeField, Range(0f, 24f)] float hour = 13.5f;
         [Tooltip("Real minutes per in-game hour. 2 = a full day in 48 real minutes.")]
         [Min(0.01f)] [SerializeField] float realMinutesPerGameHour = 2f;
         [Tooltip("Seconds between ambient probe refreshes while the cycle runs.")]
@@ -214,11 +214,14 @@ namespace Nyc.Rendering
             if (p == null) return;
             Active = p;
 
+            // Coordinate conversion: source sunDir has Z south (+Z), Unity has Z north (+Z)
+            Vector3 unitySunDir = Core.CityFrame.DirToUnity(p.sunDir).normalized;
+            if (unitySunDir.sqrMagnitude < 1e-6f) unitySunDir = Vector3.up;
+
             // Sun -------------------------------------------------------------------------
             if (sun)
             {
-                Vector3 dir = p.sunDir.sqrMagnitude > 1e-6f ? p.sunDir.normalized : Vector3.up;
-                sun.transform.rotation = Quaternion.LookRotation(-dir, Vector3.up);
+                sun.transform.rotation = Quaternion.LookRotation(-unitySunDir, Vector3.up);
                 sun.color = p.sunColor;
                 sun.intensity = p.sunIntensity;
                 sun.shadows = LightShadows.Soft;
@@ -233,11 +236,9 @@ namespace Nyc.Rendering
             RenderSettings.ambientGroundColor = p.hemiGround * p.hemiIntensity;
             RenderSettings.ambientIntensity = 1f;
 
-            // Fog (FogExp2) ----------------------------------------------------------------
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = p.fogColor;
-            RenderSettings.fogDensity = p.fogDensity;
+            // Fog: handled by AtmosphericScatteringFeature (matching lighting.js createAerialFogNode)
+            // Disable built-in flat FogExp2 to prevent double fogging
+            RenderSettings.fog = false;
 
             RenderSettings.reflectionIntensity = p.envIntensity;
 
@@ -248,7 +249,7 @@ namespace Nyc.Rendering
                 skyMaterial.SetFloat(NycShaderIDs.Rayleigh, p.rayleigh);
                 skyMaterial.SetFloat(NycShaderIDs.MieCoefficient, p.mieCoefficient);
                 skyMaterial.SetFloat(NycShaderIDs.MieG, p.mieDirectionalG);
-                skyMaterial.SetVector(NycShaderIDs.SkySunDir, p.sunDir.normalized);
+                skyMaterial.SetVector(NycShaderIDs.SkySunDir, unitySunDir);
                 skyMaterial.SetFloat(NycShaderIDs.SkyExposure, p.skyExposure);
                 skyMaterial.SetFloat(NycShaderIDs.NightFactor, p.nightFactor);
                 skyMaterial.SetFloat(NycShaderIDs.CloudCoverage, p.cloudCoverage);
@@ -259,20 +260,35 @@ namespace Nyc.Rendering
                 RenderSettings.skybox = skyMaterial;
             }
 
+            if (Camera.main != null && Camera.main.clearFlags != CameraClearFlags.Skybox)
+            {
+                Camera.main.clearFlags = CameraClearFlags.Skybox;
+            }
+
             PushCityGlobals(p);
             ApplyGrade(p);
 
-            if (environmentProbe) environmentProbe.RenderProbe();
+            // bakeEnvironmentMap() in js/lighting.js:242 hides the solar disc before the PMREM
+            // pass so the reflection probe does not bake a sun spot, then restores it.
+            if (environmentProbe)
+            {
+                if (skyMaterial) skyMaterial.SetFloat(NycShaderIDs.ShowSunDisc, 0f);
+                environmentProbe.RenderProbe();
+                if (skyMaterial) skyMaterial.SetFloat(NycShaderIDs.ShowSunDisc, 1f);
+            }
 
             PresetChanged?.Invoke(p);
         }
 
         void PushCityGlobals(TimeOfDayPreset p)
         {
+            Vector3 unitySunDir = Core.CityFrame.DirToUnity(p.sunDir).normalized;
+            if (unitySunDir.sqrMagnitude < 1e-6f) unitySunDir = Vector3.up;
+
             Shader.SetGlobalVector(NycShaderIDs.SunColor, p.sunColor.linear);
             Shader.SetGlobalVector(NycShaderIDs.SkyTopColor, p.skyTop.linear);
             Shader.SetGlobalVector(NycShaderIDs.SkyHorizonColor, p.skyHorizon.linear);
-            Shader.SetGlobalVector(NycShaderIDs.SunDir, p.sunDir.normalized);
+            Shader.SetGlobalVector(NycShaderIDs.SunDir, unitySunDir);
             Shader.SetGlobalFloat(NycShaderIDs.InteriorGlow, p.interiorGlow);
             Shader.SetGlobalFloat(NycShaderIDs.RoadWetness, p.roadWetness);
             Shader.SetGlobalFloat(NycShaderIDs.CanyonBounce, p.canyonBounce);
@@ -324,26 +340,25 @@ namespace Nyc.Rendering
         {
             if (_tonemap) _tonemap.mode.Override(TonemappingMode.ACES);
 
+            // NycBloomFeature handles peak-limited dual-threshold bloom, color balance,
+            // middle-gray contrast, vibrance, saturation and vignette.
+            // Zero out built-in Volume overrides to avoid double color grading.
             if (_grade)
             {
-                _grade.postExposure.Override(Mathf.Log(Mathf.Max(0.01f, p.exposure), 2f));
-                _grade.contrast.Override((p.contrast - 1f) * 100f);
-                _grade.saturation.Override((p.saturation - 1f) * 100f);
-                _grade.colorFilter.Override(new Color(p.whiteBalance.x, p.whiteBalance.y, p.whiteBalance.z, 1f));
+                _grade.postExposure.Override(0f);
+                _grade.contrast.Override(0f);
+                _grade.saturation.Override(0f);
+                _grade.colorFilter.Override(Color.white);
             }
 
             if (_bloom)
             {
-                _bloom.intensity.Override(p.bloom);
-                _bloom.threshold.Override(p.bloomThreshold);
-                _bloom.scatter.Override(0.7f);
-                _bloom.tint.Override(Color.white);
+                _bloom.intensity.Override(0f);
             }
 
             if (_vignette)
             {
-                _vignette.intensity.Override(0.12f);
-                _vignette.smoothness.Override(0.4f);
+                _vignette.intensity.Override(0f);
             }
         }
 

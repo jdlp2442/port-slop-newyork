@@ -46,6 +46,11 @@ namespace Nyc.UI
         Label _place;
         Label _signs;
         Label _hint;
+        VisualElement _droneHub;
+        VisualElement _droneLeftReticle;
+        VisualElement _droneRightReticle;
+        Label _droneStatus;
+        DroneWeaponSystem _droneWeapons;
 
         Button[] _modeButtons;
         Button[] _cameraButtons;
@@ -106,6 +111,7 @@ namespace Nyc.UI
             _modeIndicator = _root.Q("mode-indicator");
             _teleportPopover = _root.Q("teleport-popover");
             _cameraPopover = _root.Q("camera-popover");
+            CreateDroneHub();
 
             // Modes
             _modeButtons = new[]
@@ -195,11 +201,84 @@ namespace Nyc.UI
             _fpsSmoothed = Mathf.Lerp(_fpsSmoothed, 1f / dt, 0.08f);
 
             mapSystem?.Tick();
+            RefreshDroneHub();
 
             if (_timer < refreshInterval) return;
             _timer = 0f;
 
             RefreshTelemetry();
+        }
+
+        void CreateDroneHub()
+        {
+            if (_root == null || _droneHub != null) return;
+
+            _droneHub = new VisualElement { name = "drone-pov-hub", pickingMode = PickingMode.Ignore };
+            _droneHub.AddToClassList("drone-pov-hub");
+
+            var title = new Label("DRONE POV  //  DUAL WEAPON LINK");
+            title.AddToClassList("drone-hub-title");
+            _droneHub.Add(title);
+
+            var hint = new Label("WASD FLY   SPACE/E UP   Q/C DOWN   MOUSE AIM");
+            hint.AddToClassList("drone-hub-hint");
+            _droneHub.Add(hint);
+
+            _droneLeftReticle = CreateReticle("LMB  GUN L", "drone-reticle-left");
+            _droneRightReticle = CreateReticle("RMB  GUN R", "drone-reticle-right");
+            _droneHub.Add(_droneLeftReticle);
+            _droneHub.Add(_droneRightReticle);
+
+            _droneStatus = new Label("LINKED AIM  ·  STANDBY");
+            _droneStatus.AddToClassList("drone-hub-status");
+            _droneHub.Add(_droneStatus);
+
+            _root.Add(_droneHub);
+        }
+
+        static VisualElement CreateReticle(string label, string className)
+        {
+            var reticle = new VisualElement { pickingMode = PickingMode.Ignore };
+            reticle.AddToClassList("drone-reticle");
+            reticle.AddToClassList(className);
+            var cross = new Label("+");
+            cross.AddToClassList("drone-reticle-cross");
+            reticle.Add(cross);
+            var caption = new Label(label);
+            caption.AddToClassList("drone-reticle-label");
+            reticle.Add(caption);
+            return reticle;
+        }
+
+        void RefreshDroneHub()
+        {
+            if (_droneHub == null || controllers == null || cameras == null) return;
+            if (_droneWeapons == null) _droneWeapons = FindAnyObjectByType<DroneWeaponSystem>();
+
+            bool visible = _droneWeapons != null && controllers.ActiveMode == TravelMode.Helicopter &&
+                           cameras.activePresetId == "pov" && !_droneWeapons.HasOverlay;
+            _droneHub.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!visible) return;
+
+            float width = Mathf.Max(1f, _root.resolvedStyle.width);
+            float height = Mathf.Max(1f, _root.resolvedStyle.height);
+            PositionReticle(_droneLeftReticle, _droneWeapons.LeftAim, width, height);
+            PositionReticle(_droneRightReticle, _droneWeapons.RightAim, width, height);
+            if (_droneStatus != null)
+            {
+                string left = _droneWeapons.LeftTrigger ? "FIRE" : "AIM";
+                string right = _droneWeapons.RightTrigger ? "FIRE" : "AIM";
+                _droneStatus.text = $"GUN L {left}   ·   GUN R {right}   ·   LINKED";
+            }
+        }
+
+        static void PositionReticle(VisualElement reticle, Vector2 aim, float width, float height)
+        {
+            if (reticle == null) return;
+            float x = width * (0.5f + aim.x * 0.34f) - 24f;
+            float y = height * (0.5f - aim.y * 0.30f) - 24f;
+            reticle.style.left = new Length(x, LengthUnit.Pixel);
+            reticle.style.top = new Length(y, LengthUnit.Pixel);
         }
 
         void RefreshTelemetry()

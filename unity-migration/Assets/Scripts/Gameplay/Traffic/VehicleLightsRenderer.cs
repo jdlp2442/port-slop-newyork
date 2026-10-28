@@ -64,27 +64,35 @@ namespace Nyc.Gameplay.Traffic
                 tailMaterial = new Material(shader) { name = "VehicleTaillights" };
             }
 
+            // RenderMeshInstanced rejects both generated and inspector-provided materials unless
+            // instancing is explicitly enabled. Keep the light fallback path exception-free.
+            beamMaterial.enableInstancing = true;
+            tailMaterial.enableInstancing = true;
+
             _carBeamMesh = CreateBeamMesh(halfWidth: 0.58f, frontZ: -2.2f, range: beamDistance, spread: beamSpreadWidth);
             _busBeamMesh = CreateBeamMesh(halfWidth: 0.85f, frontZ: -5.8f, range: beamDistance * 1.2f, spread: beamSpreadWidth * 1.3f);
             _tailGlowMesh = CreateTailGlowMesh(halfWidth: 0.58f, rearZ: 2.2f);
+
+            _mpb = new MaterialPropertyBlock();
 
             _beamParams = new RenderParams(beamMaterial)
             {
                 worldBounds = new Bounds(Vector3.zero, Vector3.one * 30000f),
                 shadowCastingMode = ShadowCastingMode.Off,
-                receiveShadows = false
+                receiveShadows = false,
+                matProps = _mpb
             };
 
             _tailParams = new RenderParams(tailMaterial)
             {
                 worldBounds = new Bounds(Vector3.zero, Vector3.one * 30000f),
                 shadowCastingMode = ShadowCastingMode.Off,
-                receiveShadows = false
+                receiveShadows = false,
+                matProps = _mpb
             };
 
             _beamMatrices = new Matrix4x4[MaxBatch];
             _tailMatrices = new Matrix4x4[MaxBatch];
-            _mpb = new MaterialPropertyBlock();
 
             _initialized = true;
         }

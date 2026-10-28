@@ -19,8 +19,8 @@ namespace Nyc.Gameplay
         float _tForward, _tBackward, _tLeft, _tRight, _tUp, _tDown, _tBoost;
 
         void Update() => Read();
-        void OnApplicationFocus(bool focused) { if (!focused) ResetAll(); }
-        void OnApplicationPause(bool paused) { if (paused) ResetAll(); }
+        void OnApplicationFocus(bool focused) { if (!focused && !Application.isEditor) ResetAll(); }
+        void OnApplicationPause(bool paused) { if (paused && !Application.isEditor) ResetAll(); }
 
         public void SetTouch(string action, float value)
         {
@@ -40,6 +40,12 @@ namespace Nyc.Gameplay
         public void ClearTouch()
         {
             _tForward = _tBackward = _tLeft = _tRight = _tUp = _tDown = _tBoost = 0f;
+        }
+
+        /// <summary>Editor/replay hook for deterministic movement captures.</summary>
+        public void SetManualInput(ControllerInput state)
+        {
+            Current = state;
         }
 
         public void ResetAll()

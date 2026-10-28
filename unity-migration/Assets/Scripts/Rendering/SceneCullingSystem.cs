@@ -135,8 +135,12 @@ namespace Nyc.Rendering
         {
             if (r == null) return;
             string name = r.gameObject.name;
-            if (name == "Ground" || name == "Roads" || name.Contains("ManhattanGround") || name.Contains("ManhattanRoads")) return;
-            if (cullDist < 0f) cullDist = maxBuildingCullDistance;
+            // Never CPU-cull large static city structures or building chunks.
+            // Unity URP handles frustum culling natively in C++ SIMD with zero pop-in.
+            if (name == "Ground" || name == "Roads" || name.Contains("Manhattan") ||
+                name.StartsWith("Chunk_") || name.Contains("Building") || name.Contains("Landmark") ||
+                name.Contains("Borough") || name.Contains("Bridge") || name.Contains("Pier")) return;
+            if (cullDist < 0f) cullDist = minPropCullDistance;
 
             Vector3 pos = r.bounds.center;
             CullingChunk chunk = GetOrCreateChunk(pos.x, pos.z, cullDist);
@@ -152,7 +156,11 @@ namespace Nyc.Rendering
         public void RegisterGameObject(GameObject go, float cullDist = -1f)
         {
             if (go == null) return;
-            if (cullDist < 0f) cullDist = maxBuildingCullDistance;
+            string name = go.name;
+            if (name == "Ground" || name == "Roads" || name.Contains("Manhattan") ||
+                name.StartsWith("Chunk_") || name.Contains("Building") || name.Contains("Landmark") ||
+                name.Contains("Borough") || name.Contains("Bridge") || name.Contains("Pier")) return;
+            if (cullDist < 0f) cullDist = minPropCullDistance;
 
             Vector3 pos = go.transform.position;
             CullingChunk chunk = GetOrCreateChunk(pos.x, pos.z, cullDist);
@@ -161,18 +169,11 @@ namespace Nyc.Rendering
 
         /// <summary>
         /// Scans and partitions all child renderers under the given city root transforms.
+        /// Large building chunks remain managed natively by Unity's frustum culling.
+        /// Details/props are registered for distance culling.
         /// </summary>
         public void RegisterCityRoots(Transform buildingRoot, Transform detailsRoot = null)
         {
-            if (buildingRoot != null)
-            {
-                var renderers = buildingRoot.GetComponentsInChildren<MeshRenderer>(true);
-                for (int i = 0; i < renderers.Length; i++)
-                {
-                    RegisterRenderer(renderers[i], maxBuildingCullDistance);
-                }
-            }
-
             if (detailsRoot != null)
             {
                 var renderers = detailsRoot.GetComponentsInChildren<MeshRenderer>(true);

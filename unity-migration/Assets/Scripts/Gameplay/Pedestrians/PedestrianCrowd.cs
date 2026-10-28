@@ -22,8 +22,10 @@ namespace Nyc.Gameplay.Pedestrians
         [Header("Rendering")]
         public Material material;
         public int maxWalkers = 1200;
-        public float radius = 320f;
-        public float rebuildDistance = 45f;
+        // Hysteresis keeps the same nearby walkers alive while a vehicle moves through the city;
+        // the web crowd does not rebuild the visible pool every few metres.
+        public float radius = 480f;
+        public float rebuildDistance = 160f;
         public float sidewalkInset = 1.9f;
 
         [Header("References")]
@@ -109,13 +111,28 @@ namespace Nyc.Gameplay.Pedestrians
             _ready = true;
         }
 
+        float GetEffectiveRadius(out float rebuildDist)
+        {
+            bool isHelicopter = controllers != null && controllers.ActiveMode == TravelMode.Helicopter;
+            float camAltitude = viewCamera != null ? viewCamera.transform.position.y : 0f;
+            if (isHelicopter || camAltitude > 35f)
+            {
+                float t = Mathf.Clamp01((camAltitude - 35f) / 120f);
+                rebuildDist = Mathf.Lerp(rebuildDistance, 280f, t);
+                return Mathf.Lerp(radius, 780f, t);
+            }
+            rebuildDist = rebuildDistance;
+            return radius;
+        }
+
         void Update()
         {
             if (!_ready) EnsureInit();
             if (!_ready || CityConfig.Geo == null) return;
 
             Vector2 focus = Focus();
-            if (Vector2.Distance(focus, _lastBuild) > rebuildDistance) Rebuild(focus);
+            float effRadius = GetEffectiveRadius(out float effRebuildDist);
+            if (Vector2.Distance(focus, _lastBuild) > effRebuildDist || walkerCount == 0) Rebuild(focus, effRadius);
 
             _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
             int steps = 0;
@@ -133,7 +150,7 @@ namespace Nyc.Gameplay.Pedestrians
         public void RebuildNow()
         {
             EnsureInit();
-            if (CityConfig.Geo != null) Rebuild(Focus());
+            if (CityConfig.Geo != null) Rebuild(Focus(), GetEffectiveRadius(out _));
         }
 
         /// <summary>Traffic query used to keep vehicles from entering a busy curb/crossing.</summary>
@@ -156,12 +173,14 @@ namespace Nyc.Gameplay.Pedestrians
         void Tick(float dt, Vector2 focus)
         {
             var geo = CityConfig.Geo;
+            if (geo == null || geo.Blocks == null) return;
+            EnsureBlockPerimeters();
 
             for (int i = 0; i < walkerCount; i++)
             {
                 Walker w = _walkers[i];
                 BlockRec block = geo.Blocks[w.Block];
-                float perimeter = Perimeter(block.Poly);
+                float perimeter = GetBlockPerimeter(w.Block);
                 if (perimeter < 1f) continue;
 
                 w.PreviousS = w.S;
@@ -196,7 +215,7 @@ namespace Nyc.Gameplay.Pedestrians
             {
                 Walker w = _walkers[i];
                 BlockRec block = CityConfig.Geo.Blocks[w.Block];
-                float perimeter = Perimeter(block.Poly);
+                float perimeter = GetBlockPerimeter(w.Block);
                 float previousS = w.PreviousS;
                 if (perimeter > 0f && Mathf.Abs(w.S - previousS) > perimeter * 0.5f)
                     previousS += w.S > previousS ? perimeter : -perimeter;
@@ -221,49 +240,161 @@ namespace Nyc.Gameplay.Pedestrians
             _argsBuffer.SetData(_args);
             Vector3 centre = viewCamera ? viewCamera.transform.position : Vector3.zero;
             _bounds.center = centre;
-            _bounds.size = new Vector3(radius * 2.5f, 400f, radius * 2.5f);
+            float effR = GetEffectiveRadius(out _);
+            _bounds.size = new Vector3(effR * 2.5f, 600f, effR * 2.5f);
 
             Graphics.DrawMeshInstancedIndirect(_mesh, 0, material, _bounds, _argsBuffer);
         }
 
         // ------------------------------------------------------------------ population
 
-        void Rebuild(Vector2 focus)
+        void Rebuild(Vector2 focus, float curRadius)
         {
             _lastBuild = focus;
             var geo = CityConfig.Geo;
-            walkerCount = 0;
-            blockCount = 0;
+            if (geo == null || geo.Blocks.Count == 0) return;
 
-            for (int i = 0; i < geo.Blocks.Count && walkerCount < maxWalkers; i++)
+            if (walkerCount == 0)
             {
-                BlockRec block = geo.Blocks[i];
-                if (block.Poly == null || block.Poly.Length < 3) continue;
-                if (Vector2.Distance(block.Center, focus) > radius) continue;
+                // Initial deterministic spawn around the spawn location
+                _rng = new System.Random(20261022);
+                walkerCount = 0;
+                blockCount = 0;
 
-                float perimeter = Perimeter(block.Poly);
-                if (perimeter < 25f) continue;
-
-                blockCount++;
-                int n = Mathf.Clamp(Mathf.RoundToInt(perimeter / 30f), 2, 18);
-
-                for (int k = 0; k < n && walkerCount < maxWalkers; k++)
+                for (int i = 0; i < geo.Blocks.Count && walkerCount < maxWalkers; i++)
                 {
-                    _walkers[walkerCount++] = new Walker
+                    BlockRec block = geo.Blocks[i];
+                    if (block.Poly == null || block.Poly.Length < 3) continue;
+                    if (Vector2.Distance(block.Center, focus) > curRadius) continue;
+
+                    float perimeter = Perimeter(block.Poly);
+                    if (perimeter < 25f) continue;
+
+                    blockCount++;
+                    int n = Mathf.Clamp(Mathf.RoundToInt(perimeter / 30f), 2, 18);
+
+                    for (int k = 0; k < n && walkerCount < maxWalkers; k++)
                     {
-                        Block = i,
-                        S = (float)_rng.NextDouble() * perimeter,
-                        PreviousS = 0f,
-                        Dir = _rng.Next(0, 2) == 0 ? -1f : 1f,
-                        Speed = 1.05f + (float)_rng.NextDouble() * 0.65f,
-                        Phase = (float)_rng.NextDouble() * Mathf.PI * 2f,
-                        PreviousPhase = 0f,
-                        Scale = 0.92f + (float)_rng.NextDouble() * 0.16f,
-                        Seed = (float)_rng.NextDouble(),
-                        Tint = Palette[_rng.Next(0, Palette.Length)]
-                    };
+                        float initS = (float)_rng.NextDouble() * perimeter;
+                        float initPhase = (float)_rng.NextDouble() * Mathf.PI * 2f;
+                        _walkers[walkerCount++] = new Walker
+                        {
+                            Block = i,
+                            S = initS,
+                            PreviousS = initS,
+                            Dir = _rng.Next(0, 2) == 0 ? -1f : 1f,
+                            Speed = 1.05f + (float)_rng.NextDouble() * 0.65f,
+                            Phase = initPhase,
+                            PreviousPhase = initPhase,
+                            Scale = 0.92f + (float)_rng.NextDouble() * 0.16f,
+                            Seed = (float)_rng.NextDouble(),
+                            Tint = Palette[_rng.Next(0, Palette.Length)]
+                        };
+                    }
+                }
+                return;
+            }
+
+            // Continuous streaming: Keep existing nearby walkers walking without resetting.
+            // Project active focus forward when player is in motion so sidewalks ahead are always populated.
+            bool isHelicopter = controllers != null && controllers.ActiveMode == TravelMode.Helicopter;
+            float camAltitude = viewCamera != null ? viewCamera.transform.position.y : 0f;
+            Vector2 activeFocus = focus;
+            if (controllers != null && controllers.Active != null && controllers.Active.Speed > 2.0f)
+            {
+                Vector2 moveDir = new Vector2(Mathf.Sin(controllers.Active.Heading), Mathf.Cos(controllers.Active.Heading));
+                float maxLead = isHelicopter ? 260f : 120f;
+                activeFocus += moveDir * Mathf.Min(maxLead, controllers.Active.Speed * (isHelicopter ? 4.5f : 3.0f));
+            }
+
+            var candidateBlocks = new List<int>();
+            for (int i = 0; i < geo.Blocks.Count; i++)
+            {
+                BlockRec b = geo.Blocks[i];
+                if (b.Poly == null || b.Poly.Length < 3) continue;
+                float dist = Vector2.Distance(b.Center, activeFocus);
+                if (dist < curRadius * 0.94f && dist > 30f) candidateBlocks.Add(i);
+            }
+
+            if (candidateBlocks.Count == 0) return;
+
+            float maxDistSq = (curRadius * 1.25f) * (curRadius * 1.25f);
+            for (int w = 0; w < walkerCount; w++)
+            {
+                BlockRec currentBlock = geo.Blocks[_walkers[w].Block];
+                if ((currentBlock.Center - focus).sqrMagnitude > maxDistSq)
+                {
+                    int targetBlockIdx = -1;
+                    for (int attempt = 0; attempt < 16; attempt++)
+                    {
+                        int cand = candidateBlocks[_rng.Next(0, candidateBlocks.Count)];
+                        BlockRec b = geo.Blocks[cand];
+                        float dist = Vector2.Distance(b.Center, focus);
+                        bool allowDistantRespawn = (isHelicopter || camAltitude > 35f) && dist > 360f;
+
+                        if (!allowDistantRespawn && viewCamera != null)
+                        {
+                            // Test both center and bounding corners: never spawn on a block that touches camera view
+                            Vector3 bWorld = CityFrame.ToUnity(b.Center.x, 0f, b.Center.y);
+                            Vector3 vp = viewCamera.WorldToViewportPoint(bWorld);
+                            if (vp.z > 0f && vp.x >= -0.2f && vp.x <= 1.2f && vp.y >= -0.2f && vp.y <= 1.2f)
+                                continue;
+
+                            Vector3 c0 = CityFrame.ToUnity(b.Bounds.x, 0f, b.Bounds.z);
+                            Vector3 vp0 = viewCamera.WorldToViewportPoint(c0);
+                            if (vp0.z > 0f && vp0.x >= -0.2f && vp0.x <= 1.2f && vp0.y >= -0.2f && vp0.y <= 1.2f)
+                                continue;
+
+                            Vector3 c1 = CityFrame.ToUnity(b.Bounds.y, 0f, b.Bounds.w);
+                            Vector3 vp1 = viewCamera.WorldToViewportPoint(c1);
+                            if (vp1.z > 0f && vp1.x >= -0.2f && vp1.x <= 1.2f && vp1.y >= -0.2f && vp1.y <= 1.2f)
+                                continue;
+                        }
+                        targetBlockIdx = cand;
+                        break;
+                    }
+                    if (targetBlockIdx < 0) continue;
+
+                    BlockRec targetBlock = geo.Blocks[targetBlockIdx];
+                    float targetPerim = Perimeter(targetBlock.Poly);
+                    float newS = (float)_rng.NextDouble() * targetPerim;
+                    float newPhase = (float)_rng.NextDouble() * Mathf.PI * 2f;
+                    _walkers[w].Block = targetBlockIdx;
+                    _walkers[w].S = newS;
+                    _walkers[w].PreviousS = newS;
+                    _walkers[w].Phase = newPhase;
+                    _walkers[w].PreviousPhase = newPhase;
                 }
             }
+        }
+
+        float[] _blockPerimeters;
+
+        void EnsureBlockPerimeters()
+        {
+            var geo = CityConfig.Geo;
+            if (geo == null || geo.Blocks == null) return;
+            if (_blockPerimeters != null && _blockPerimeters.Length == geo.Blocks.Count) return;
+
+            _blockPerimeters = new float[geo.Blocks.Count];
+            for (int b = 0; b < geo.Blocks.Count; b++)
+            {
+                _blockPerimeters[b] = Perimeter(geo.Blocks[b].Poly);
+            }
+        }
+
+        float GetBlockPerimeter(int blockIndex)
+        {
+            if (_blockPerimeters == null || blockIndex < 0 || blockIndex >= _blockPerimeters.Length)
+            {
+                EnsureBlockPerimeters();
+                if (_blockPerimeters != null && blockIndex >= 0 && blockIndex < _blockPerimeters.Length)
+                    return _blockPerimeters[blockIndex];
+                if (CityConfig.Geo != null && CityConfig.Geo.Blocks != null && blockIndex >= 0 && blockIndex < CityConfig.Geo.Blocks.Count)
+                    return Perimeter(CityConfig.Geo.Blocks[blockIndex].Poly);
+                return 0f;
+            }
+            return _blockPerimeters[blockIndex];
         }
 
         static float Perimeter(Vector2[] poly)
@@ -293,8 +424,10 @@ namespace Nyc.Gameplay.Pedestrians
                     float t = (s - acc) / len;
                     pos = Vector2.Lerp(a, b, t);
                     tangent = (b - a) / len;
-                    Vector2 inward = (block.Center - pos).normalized;
-                    pos += inward * inset;
+                    // Correct inward normal perpendicular to curb edge so pedestrians never veer into buildings
+                    Vector2 normal = new Vector2(-tangent.y, tangent.x);
+                    if (Vector2.Dot(normal, block.Center - pos) < 0f) normal = -normal;
+                    pos += normal * inset;
                     return;
                 }
                 acc += len;
@@ -323,12 +456,31 @@ namespace Nyc.Gameplay.Pedestrians
         static Mesh BuildWalkerMesh()
         {
             var b = new MeshBuilder();
-            b.Limb(new Vector3(0f, 1.18f, 0f), new Vector3(0.42f, 0.62f, 0.26f), 0, 0f);
-            b.Limb(new Vector3(0f, 1.62f, 0f), new Vector3(0.22f, 0.24f, 0.22f), 1, 0f);
-            b.Limb(new Vector3(-0.27f, 1.15f, 0f), new Vector3(0.11f, 0.58f, 0.13f), 2, 1.44f);
-            b.Limb(new Vector3(0.27f, 1.15f, 0f), new Vector3(0.11f, 0.58f, 0.13f), 3, 1.44f);
-            b.Limb(new Vector3(-0.11f, 0.45f, 0f), new Vector3(0.15f, 0.86f, 0.17f), 4, 0.88f);
-            b.Limb(new Vector3(0.11f, 0.45f, 0f), new Vector3(0.15f, 0.86f, 0.17f), 5, 0.88f);
+            // Part 0: Upper Torso / broad chest & athletic shoulders (distinct silhouette from both street & aerial cameras)
+            b.Limb(new Vector3(0f, 1.34f, 0f), new Vector3(0.48f, 0.28f, 0.24f), 0, 0f);
+            // Part 0: Lower Torso / tapered waist
+            b.Limb(new Vector3(0f, 1.07f, 0f), new Vector3(0.36f, 0.26f, 0.20f), 0, 0f);
+
+            // Part 1: Neck connecting body and head
+            b.Limb(new Vector3(0f, 1.49f, 0f), new Vector3(0.13f, 0.10f, 0.13f), 1, 0f);
+            // Part 1: Cranium / face
+            b.Limb(new Vector3(0f, 1.62f, 0f), new Vector3(0.20f, 0.18f, 0.21f), 1, 0f);
+            // Part 1: Distinct top hair cap / crown (clearly recognizable human head circle from high drone/flight view)
+            b.Limb(new Vector3(0f, 1.71f, -0.01f), new Vector3(0.22f, 0.08f, 0.23f), 1, 0f);
+
+            // Part 2: Left Arm & Hand (swings with shoulder offset)
+            b.Limb(new Vector3(-0.27f, 1.14f, 0f), new Vector3(0.11f, 0.58f, 0.11f), 2, 1.44f);
+            // Part 3: Right Arm & Hand
+            b.Limb(new Vector3(0.27f, 1.14f, 0f), new Vector3(0.11f, 0.58f, 0.11f), 3, 1.44f);
+
+            // Part 4: Left Leg & Foot (clear separation between legs)
+            b.Limb(new Vector3(-0.11f, 0.48f, 0f), new Vector3(0.14f, 0.80f, 0.16f), 4, 0.88f);
+            b.Limb(new Vector3(-0.11f, 0.05f, 0.04f), new Vector3(0.13f, 0.10f, 0.24f), 4, 0.88f);
+
+            // Part 5: Right Leg & Foot
+            b.Limb(new Vector3(0.11f, 0.48f, 0f), new Vector3(0.14f, 0.80f, 0.16f), 5, 0.88f);
+            b.Limb(new Vector3(0.11f, 0.05f, 0.04f), new Vector3(0.13f, 0.10f, 0.24f), 5, 0.88f);
+
             return b.ToMesh("PedestrianWalker");
         }
 

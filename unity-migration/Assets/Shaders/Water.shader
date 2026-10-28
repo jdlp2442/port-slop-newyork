@@ -220,8 +220,9 @@ Shader "Nyc/Water"
                 inputData.bakedGI = SampleSH(waterNormal);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+                half smoothness = saturate(1.0h - roughness);
                 half4 color = UniversalFragmentPBR(inputData, albedo, metallic, half3(0, 0, 0),
-                                                   roughness, 1.0h, emission, 1.0h);
+                                                   smoothness, 1.0h, emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;
             }

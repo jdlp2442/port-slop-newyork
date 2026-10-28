@@ -4,7 +4,12 @@
 > entero antes de tocar nada. Explica qué se ha hecho, por qué, dónde está cada cosa, qué
 > contratos no se pueden romper y qué queda por hacer.
 
-Última actualización: **Auditoría de Play y primera integración de referencias completadas el 2026-10-22**.
+Última actualización: **Arte importado del web el 2026-10-23: 51 GLB (7 vehículos, 35 props, 9 árboles) + 22 iconos SVG del HUD. Ver [`IMPORTED-ART.md`](IMPORTED-ART.md) y [`AUDIT-2026-10-23.md`](AUDIT-2026-10-23.md)**.
+
+> **Lee primero [`AUDIT-2026-10-23.md`](AUDIT-2026-10-23.md)** — auditoría de paridad: defectos
+> confirmados con evidencia, matriz de cobertura, huecos D5–D10 y plan P0–P3.
+> **Y [`IMPORTED-ART.md`](IMPORTED-ART.md)** — pipeline de exportación GLB desde el web y cómo se
+> conecta (`ImportedArtLibrary`, flip Z obligatorio, fallback procedural).
 
 ---
 
@@ -57,9 +62,10 @@ la misma sensación de conducción** en Unity, manteniendo el dato como única f
 
 ```
 D:/escena/
-├── slop-newyork-main/slop-newyork-main/   ← repositorio original (NO TOCAR, es la referencia)
+├── slop-newyork-main/            ← repositorio original (NO TOCAR salvo herramientas de captura)
 │   ├── js/           23 módulos (fuente de la lógica)
 │   ├── tools/        pipeline de datos Node (build-geodata.mjs + geo-*.mjs)
+│   │                  + capture-web-cdp.mjs (capturas WebGPU headless reales, ver AUDIT D2)
 │   ├── css/          HUD
 │   └── index.html
 └── unity-migration/                        ← ESTE proyecto

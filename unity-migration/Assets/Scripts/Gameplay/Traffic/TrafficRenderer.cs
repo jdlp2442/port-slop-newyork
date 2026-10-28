@@ -53,7 +53,7 @@ namespace Nyc.Gameplay.Traffic
 
         public void EnsureInit()
         {
-            if (_ready) return;
+            if (_ready && _instances != null && _instances.Length > 0 && _instances[0].IsCreated && _meshes != null && _materials != null) return;
 
             _meshes = new[]
             {
@@ -144,9 +144,11 @@ namespace Nyc.Gameplay.Traffic
         public void Render(List<VehicleInstance>[] batches)
         {
             EnsureInit();
+            if (!_ready || _instances == null || batches == null || _meshes == null) return;
 
             for (int b = 0; b < batches.Length && b < _meshes.Length; b++)
             {
+                if (batches[b] == null || b >= _instances.Length || !_instances[b].IsCreated) continue;
                 int count = Mathf.Min(batches[b].Count, capacity);
                 if (count == 0) continue;
 

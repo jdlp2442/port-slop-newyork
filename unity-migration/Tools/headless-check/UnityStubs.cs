@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace UnityEngine
 {
-    public class Object
+    public partial class Object
     {
         public string name;
         public HideFlags hideFlags;
@@ -170,6 +170,8 @@ namespace UnityEngine
         public Quaternion localRotation;
         public Vector3 localScale = Vector3.one;
         public List<Transform> children = new List<Transform>();
+        public Matrix4x4 localToWorldMatrix => Matrix4x4.TRS(localPosition, localRotation, localScale);
+        public Matrix4x4 worldToLocalMatrix => localToWorldMatrix.inverse;
         public void SetParent(Transform p, bool worldPositionStays) { parent = p; p?.children.Add(this); }
         public void SetPositionAndRotation(Vector3 pos, Quaternion rot) { position = pos; rotation = rot; }
         public Vector3 forward => new Vector3(0, 0, 1);
@@ -195,11 +197,18 @@ namespace UnityEngine
             foreach (var c in components) if (c is T t) return t;
             return null;
         }
+        public T[] GetComponentsInChildren<T>(bool includeInactive) => Array.Empty<T>();
         public void SetActive(bool value) { }
         public static GameObject Find(string name) => All.Find(g => g.name == name);
     }
 
     public class Coroutine { }
+
+    public class Animator : Component
+    {
+        public float speed = 1f;
+        public void Play(string stateName) { }
+    }
 
     public class MonoBehaviour : Component
     {
@@ -211,16 +220,18 @@ namespace UnityEngine
 
     public class Mesh : Object
     {
+        public Bounds bounds;
         public Rendering.IndexFormat indexFormat;
         public int subMeshCount = 1;
+        public int vertexCount => verts.Count;
         public List<Vector3> verts = new List<Vector3>();
-        public List<Vector3> normals = new List<Vector3>();
+        List<Vector3> _normals = new List<Vector3>();
         public List<Vector2>[] uvs = { new List<Vector2>(), new List<Vector2>(), new List<Vector2>(), new List<Vector2>() };
         public List<Color32> colors = new List<Color32>();
         public List<int>[] tris = Array.Empty<List<int>>();
 
         public void SetVertices(List<Vector3> v) { verts = new List<Vector3>(v); }
-        public void SetNormals(List<Vector3> n) { normals = new List<Vector3>(n); }
+        public void SetNormals(List<Vector3> n) { _normals = new List<Vector3>(n); }
         public void SetUVs(int channel, List<Vector2> uv) { uvs[channel] = new List<Vector2>(uv); }
         public void SetColors(List<Color32> c) { colors = new List<Color32>(c); }
         public void SetTriangles(List<int> t, int submesh, bool calculateBounds = true)
@@ -233,9 +244,30 @@ namespace UnityEngine
         public void RecalculateNormals() { }
 
         public Vector3[] vertices { get => verts.ToArray(); set => verts = new List<Vector3>(value); }
+        public Vector3[] normals { get => _normals.ToArray(); set => _normals = new List<Vector3>(value); }
         public int[] triangles { get => tris.Length > 0 ? tris[0].ToArray() : Array.Empty<int>(); set { if (tris.Length == 0) tris = new List<int>[1]; tris[0] = new List<int>(value); } }
+
+        public void CombineMeshes(CombineInstance[] combine, bool mergeSubMeshes = true, bool useMatrices = true) { }
+        public Mesh Clone() => this;
     }
 
+    public struct CombineInstance
+    {
+        public Mesh mesh;
+        public int subMeshIndex;
+        public Matrix4x4 transform;
+    }
+
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : class => null;
+    }
+
+    public partial class Object
+    {
+        public static T Instantiate<T>(T original) where T : class => original;
+        public static T Instantiate<T>(T original, Transform parent, bool instantiateInWorldSpace = false) where T : class => original;
+    }
     public class MeshFilter : Component
     {
         Mesh m;
@@ -315,6 +347,7 @@ namespace UnityEngine
     public static class Application
     {
         public static bool isPlaying => false;
+        public static bool isEditor => true;
         public static string streamingAssetsPath => "unity-migration/Assets/StreamingAssets";
         public static string dataPath => "unity-migration/Assets";
     }

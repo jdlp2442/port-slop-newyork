@@ -301,7 +301,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Nyc.Core.NycMainBootstrapper
   autoStartOnAwake: 1
   initialTravelMode: 1
-  startHour: 17.75
+  startHour: 13.5
   lightingSystem: {fileID: 280370049}
   postProcessing: {fileID: 796716278}
   cityMeshBuilder: {fileID: 708902948}
@@ -344,7 +344,7 @@ MonoBehaviour:
   volumeProfile: {fileID: 11400000, guid: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d, type: 2}
   environmentProbe: {fileID: 0}
   runCycle: 0
-  hour: 17.75
+  hour: 13.5
   realMinutesPerGameHour: 2
   ambientRefreshInterval: 0.25
   streetShadowDistance: 300
@@ -1224,13 +1224,13 @@ MonoBehaviour:
   renderer: {fileID: 0}
   controllers: {fileID: 0}
   viewCamera: {fileID: 0}
-  cars: 200
-  buses: 32
+  cars: 280
+  buses: 36
   lookAhead: 70
-  spawnMin: 100
-  spawnMax: 300
+  spawnMin: 280
+  spawnMax: 550
   despawnRadius: 1200
-  nearRadius: 350
+  nearRadius: 420
   maxAccel: 9
   activeCount: 0
   spawnFailures: 0

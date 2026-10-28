@@ -1,7 +1,12 @@
 // ---------------------------------------------------------------------------------------------
-// Physical Preetham sky (three.js SkyMesh port) + a cheap Beer-style cloud deck.
-// Matches js/lighting.js TIME_PRESETS: turbidity, rayleigh, mieCoefficient, mieDirectionalG,
-// cloudCoverage, cloudDensity, skyExposure, nightFactor.
+// Physical Preetham sky: faithful port of three/addons/objects/SkyMesh.js (three r187, WebGPU).
+// This is NOT the classic WebGL Sky.js: SkyMesh.js computes sunE with an earth-shadow hack,
+// uses zenith optical lengths of 8.4E3 / 1.25E3 and a MieConst-based betaM. The classic
+// constants (constant sunE = 40, sR = totalRayleigh) collapse Fex to 1 and render a black sky.
+//
+// Source of truth: https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/jsm/objects/SkyMesh.js
+// The repo's js/lighting.js wraps the raw output: dayCol = raw * uSkyExposure, then
+// mix(dayCol, nightSkyColor, nightFactor) — reproduced by _Exposure / _NightFactor below.
 //
 // Assign to RenderSettings.skybox (or a Volume "Visual Environment" override).
 // ---------------------------------------------------------------------------------------------
@@ -17,6 +22,7 @@ Shader "Nyc/Sky"
         _Exposure        ("Sky exposure", Float) = 0.148
         _NightFactor     ("Night factor", Range(0, 1)) = 0
         _NightColor      ("Night sky", Color) = (0.043, 0.082, 0.157, 1)
+        _ShowSunDisc     ("Show sun disc", Float) = 1
         _CloudCoverage   ("Cloud coverage", Range(0, 1)) = 0.36
         _CloudDensity    ("Cloud density", Range(0, 1)) = 0.38
         _CloudElevation  ("Cloud elevation", Range(0, 1)) = 0.52
@@ -57,6 +63,7 @@ Shader "Nyc/Sky"
                 float  _Exposure;
                 float  _NightFactor;
                 float4 _NightColor;
+                float  _ShowSunDisc;
                 float  _CloudCoverage;
                 float  _CloudDensity;
                 float  _CloudElevation;
@@ -87,82 +94,53 @@ Shader "Nyc/Sky"
                 return output;
             }
 
-            // --- Preetham ------------------------------------------------------------------
+            // --- Preetham constants (SkyMesh.js) -------------------------------------------------
             static const float3 kTotalRayleigh = float3(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5);
+            static const float3 kMieConst       = float3(1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14);
+            static const float  kCutoffAngle    = 1.6110731556870734;  // pi / 1.95
+            static const float  kSteepness      = 1.5;
+            static const float  kEE             = 1000.0;
+            static const float  kRayleighZenith = 8.4e3;
+            static const float  kMieZenith      = 1.25e3;
+            static const float  kSunAngularCos  = 0.9999566769464484;  // 66 arc seconds
+            static const float  kThreeOver16Pi  = 0.05968310365946075;
+            static const float  kOneOver4Pi     = 0.07957747154594767;
+            static const float  kE              = 2.718281828459045;
+            // js/lighting.js:153 sets cloudSpeed once; the drift is in UV units per second.
+            static const float  kCloudSpeed     = 0.000015;
 
-            float3 SkyRadiance(float3 direction, float3 sunDir)
+            // --- clouds: sinless hash gradient noise (SkyMesh.js) --------------------------------
+            float2 SkyGradient(float2 i)
             {
-                const float3 up = float3(0.0, 1.0, 0.0);
-                const float pi = 3.141592653589793;
-                const float sunE = 1000.0 * 0.04;
-
-                float3 totalMie = float3(0.2, 0.21, 0.2) * 0.434 * _MieCoefficient;
-                float sunfade = 1.0 - saturate(1.0 - exp(sunDir.y / 450000.0));
-                float rayleighCoefficient = _Rayleigh - (1.0 - sunfade);
-                float3 betaR = kTotalRayleigh * rayleighCoefficient;
-                float3 betaM = totalMie * _Turbidity;
-
-                float zenithAngle = acos(max(0.0, dot(up, direction)));
-                float inv = 1.0 / (cos(zenithAngle) + 0.15 * pow(max(93.885 - (zenithAngle * 180.0 / pi), 0.001), -1.253));
-                float3 sR = kTotalRayleigh * inv;
-                float3 sM = totalMie * inv;
-
-                float3 Fex = exp(-(betaR * sR + betaM * sM));
-
-                float cosTheta = dot(direction, sunDir);
-                float rayleighPhase = 3.0 / (16.0 * pi) * (1.0 + cosTheta * cosTheta);
-                float g = _MieDirectionalG;
-                float miePhase = 3.0 / (8.0 * pi)
-                               * ((1.0 - g * g) * pow(cosTheta, 2.0))
-                               / ((2.0 + g * g) * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 1e-4), 1.5));
-
-                float3 Lin = pow(max(sunE * ((betaR * rayleighPhase + betaM * miePhase) / (betaR + betaM))
-                                     * (1.0 - Fex), 0.0), float3(1.5, 1.5, 1.5));
-                Lin *= lerp(float3(1, 1, 1),
-                            pow(max(sunE * ((betaR * rayleighPhase + betaM * miePhase) / (betaR + betaM)) * Fex, 0.0),
-                                float3(0.5, 0.5, 0.5)),
-                            saturate(pow(1.0 - dot(up, sunDir), 5.0)));
-
-                float3 L0 = float3(0.1, 0.1, 0.1) * Fex;
-                float sunAngularDiameterCos = cos(radians(0.53));
-                float sundisk = smoothstep(sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta);
-                float3 Lsun = L0 * sundisk * 10.0;
-
-                return (Lin + L0) * 0.04 + float3(0.0, 0.0003, 0.00075);
+                float3 p = frac(i.xyx * float3(0.1031, 0.1030, 0.0973));
+                p += dot(p, p.yzx + 33.33);
+                return frac((p.xx + p.yz) * p.zy) * 2.0 - 1.0;
             }
 
-            // --- clouds --------------------------------------------------------------------
-            float CloudFbm(float2 p)
+            float SkyNoise(float2 p)
             {
-                float v = 0.0;
-                float a = 0.5;
-                for (int i = 0; i < 4; i++)
+                float2 i = floor(p);
+                float2 f = frac(p);
+                float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);  // quintic fade
+                float a = dot(SkyGradient(i), f);
+                float b = dot(SkyGradient(i + float2(1.0, 0.0)), f - float2(1.0, 0.0));
+                float c = dot(SkyGradient(i + float2(0.0, 1.0)), f - float2(0.0, 1.0));
+                float d = dot(SkyGradient(i + float2(1.0, 1.0)), f - float2(1.0, 1.0));
+                return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y) * 1.6;  // ~[-1,1]
+            }
+
+            float SkyFbm(float2 position, float2 drift)
+            {
+                float2 p = position;
+                float result = 0.0;
+                float amplitude = 1.0;
+                for (int k = 0; k < 4; k++)
                 {
-                    v += a * NycNoise2D(p);
-                    p = p * 2.03 + 17.1;
-                    a *= 0.5;
+                    result += amplitude * SkyNoise(p);
+                    amplitude *= 0.5;
+                    p = p * 2.0 + drift;
                 }
-                return v;
-            }
-
-            float3 CloudLayer(float3 direction, float3 sunDir)
-            {
-                if (direction.y <= 0.02) return float3(0.0, 0.0, 0.0);
-
-                float elev = max(direction.y, 0.02);
-                float2 uv = direction.xz / elev * _CloudScale * 900.0;
-                uv += float2(_NycTime * 0.0015, _NycTime * 0.0009);
-
-                float fbm = CloudFbm(uv * 2.2);
-                float shape = smoothstep(1.0 - _CloudCoverage, 1.0 - _CloudCoverage + 0.28, fbm);
-                float density = saturate(shape * (_CloudDensity * 1.8));
-                density *= smoothstep(0.02, _CloudElevation * 0.5 + 0.05, elev);
-
-                float sunAmount = saturate(dot(direction, sunDir) * 0.5 + 0.5);
-                float3 lit = lerp(_NycSkyHorizonColor.rgb, _NycSunColor.rgb * 1.6, pow(sunAmount, 6.0));
-                float3 shade = lerp(_NycSkyTopColor.rgb * 0.55, _NycSkyHorizonColor.rgb, 0.35);
-
-                return lerp(shade, lit, saturate(fbm * 1.4)) * density;
+                return result;
             }
 
             half4 Frag(Varyings input) : SV_Target
@@ -172,12 +150,100 @@ Shader "Nyc/Sky"
                 float3 direction = normalize(input.direction);
                 float3 sunDir = normalize(_SunDir.xyz);
 
-                float3 sky = SkyRadiance(direction, sunDir) * _Exposure;
-                sky = lerp(sky, _NightColor.rgb, _NightFactor);
+                // --- varyings of SkyMesh.js (uniform across the skybox draw) --------------------
+                // earth shadow hack: sun intensity falls to 0 at the horizon cutoff
+                float zenithAngleCos = clamp(sunDir.y, -1.0, 1.0);
+                float sunE = kEE * max(0.0, 1.0 - pow(kE, -(kCutoffAngle - acos(zenithAngleCos)) / kSteepness));
 
-                float3 clouds = CloudLayer(direction, sunDir);
-                clouds *= lerp(1.0, 0.12, _NightFactor);
-                sky = sky * (1.0 - saturate(clouds * 0.5)) + clouds;
+                float sunfade = 1.0 - clamp(1.0 - exp(sunDir.y / 450000.0), 0.0, 1.0);
+                float rayleighCoefficient = _Rayleigh - (1.0 - sunfade);
+                float3 betaR = kTotalRayleigh * rayleighCoefficient;
+
+                float cMie = 0.2 * _Turbidity * 10e-18;
+                float3 totalMie = 0.434 * cMie * kMieConst;
+                float3 betaM = totalMie * _MieCoefficient;
+
+                // --- optical depth -----------------------------------------------------------------
+                float zenithAngle = acos(max(0.0, direction.y));
+                float inv = 1.0 / (cos(zenithAngle) + 0.15 * pow(max(93.885 - (zenithAngle * 180.0 / NYC_PI), 0.001), -1.253));
+                float sR = kRayleighZenith * inv;
+                float sM = kMieZenith * inv;
+                float3 Fex = exp(-(betaR * sR + betaM * sM));
+
+                // --- in-scattering ----------------------------------------------------------------
+                float cosTheta = dot(direction, sunDir);
+
+                float rc = cosTheta * 0.5 + 0.5;
+                float rPhase = kThreeOver16Pi * (1.0 + rc * rc);
+                float3 betaRTheta = betaR * rPhase;
+
+                float g2 = _MieDirectionalG * _MieDirectionalG;
+                float mInv = 1.0 / pow(max(1.0 - 2.0 * _MieDirectionalG * cosTheta + g2, 1e-6), 1.5);
+                float mPhase = kOneOver4Pi * (1.0 - g2) * mInv;
+                float3 betaMTheta = betaM * mPhase;
+
+                float3 betaSum = max(betaR + betaM, 1e-7);
+                float3 inscatter = sunE * (betaRTheta + betaMTheta) / betaSum;
+
+                float3 Lin = pow(max(inscatter * (1.0 - Fex), 0.0), 1.5);
+                Lin *= lerp(float3(1.0, 1.0, 1.0),
+                            pow(max(inscatter * Fex, 0.0), 0.5),
+                            clamp(pow(1.0 - sunDir.y, 5.0), 0.0, 1.0));
+
+                float3 L0 = float3(0.1, 0.1, 0.1) * Fex;
+
+                // composition + solar disc (66 arc seconds, additive, hidden when baking env maps)
+                float sundisc = clamp((cosTheta - kSunAngularCos) * 50000.0, 0.0, 1.0) * _ShowSunDisc;
+                float3 sundiscColor = min(sunE * Fex, 80.0) * 760.0 * sundisc;
+
+                float3 texColor = (Lin + L0) * 0.04 + sundiscColor + float3(0.0, 0.0003, 0.00075);
+
+                // --- clouds: Beer-Powder self-shadowing + Henyey-Greenstein silver lining --------
+                if (direction.y > 0.0 && _CloudCoverage > 0.0)
+                {
+                    float elevation = lerp(1.0, 0.1, _CloudElevation);
+                    float2 cloudUV = direction.xz / (direction.y * elevation) * _CloudScale;
+                    cloudUV += _NycTime * kCloudSpeed;
+
+                    float evolve = _NycTime * kCloudSpeed * 300.0;
+                    float cloudNoise = saturate(SkyFbm(cloudUV * 1000.0, evolve) * 0.7 + 0.5);
+
+                    float region = SkyNoise(cloudUV * 300.0) * 0.37 + 0.5;
+                    float cov = saturate(_CloudCoverage + (region - 0.5) * 0.6);
+
+                    float threshold = 1.0 - cov;
+                    float cloudMask = smoothstep(threshold, threshold + 0.3, cloudNoise);
+                    float horizonFade = smoothstep(0.0, 0.03 + 0.06 * _CloudElevation, direction.y);
+                    cloudMask *= horizonFade;
+
+                    float dayFactor = smoothstep(-0.08, 0.3, sunDir.y);
+                    float3 sunColor = sunE * Fex * 0.22 * 0.04;   // 0.22 ~ albedo/pi, 0.04 = exposure
+                    float3 skyAmbient = Lin * 0.04 + float3(0.0, 0.0003, 0.00075);
+
+                    float depth = max(0.0, cloudNoise - threshold);
+                    float beer = exp(depth * -4.0);
+                    float powder = 1.0 - beer * beer;              // beer*beer == exp(-8*depth)
+                    float shade = lerp(0.45, 1.0, saturate(beer * powder * 2.6));  // 2.6 = 1/0.385
+
+                    float silver = clamp(0.51 / pow(max(1.49 - cosTheta * 1.4, 1e-4), 1.5), 0.0, 3.0);  // g = 0.7
+                    float edge = cloudMask * (1.0 - cloudMask) * 4.0;
+
+                    float3 cloudColor = skyAmbient + sunColor * shade;
+                    cloudColor += sunColor * silver * edge * 0.6;
+                    cloudColor *= max(dayFactor, 0.03);
+
+                    float alpha = (1.0 - exp(depth * _CloudDensity * -12.0)) * horizonFade;
+
+                    // Occlude the sun disc/glow behind opaque cloud, then composite through the
+                    // atmosphere so distant clouds dissolve into haze.
+                    texColor -= (L0 * 0.04 + sundiscColor) * alpha;
+                    float3 cloudAerial = lerp(texColor, cloudColor, Fex);
+                    texColor = lerp(texColor, cloudAerial, alpha);
+                }
+
+                // js/lighting.js:163-168 wrapper — calibrate into HDR, then blend to the night sky.
+                float3 sky = texColor * _Exposure;
+                sky = lerp(sky, _NightColor.rgb, _NightFactor);
 
                 return half4(sky, 1.0);
             }

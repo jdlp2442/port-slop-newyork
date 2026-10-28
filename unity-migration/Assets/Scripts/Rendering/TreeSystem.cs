@@ -30,6 +30,12 @@ namespace Nyc.Rendering
             public Species Species;
         }
 
+        struct FoliageClump
+        {
+            public Vector3 Offset;
+            public Vector3 Radii; // rx, ry, rz
+        }
+
         [Header("Materials")]
         public Material foliageMaterial;
         public Material trunkMaterial;
@@ -86,6 +92,7 @@ namespace Nyc.Rendering
         public void RenderTrees()
         {
             if (!_initialized || foliageMaterial == null || trunkMaterial == null) return;
+            if (_speciesCrownMeshes == null || _speciesCrownMeshes.Length < 3) return;
 
             var matrices = new Matrix4x4[1023];
             var colors = new Vector4[1023];
@@ -93,11 +100,12 @@ namespace Nyc.Rendering
             for (int s = 0; s < 3; s++)
             {
                 var list = _batches[s];
+                if (list == null || _speciesCrownMeshes[s] == null) continue;
                 int total = list.Count;
                 if (total == 0) continue;
 
                 Mesh crownMesh = _speciesCrownMeshes[s];
-                Mesh trunkMesh = _speciesTrunkMeshes[s];
+                Mesh trunkMesh = _speciesTrunkMeshes != null && s < _speciesTrunkMeshes.Length ? _speciesTrunkMeshes[s] : null;
 
                 for (int offset = 0; offset < total; offset += 1023)
                 {
@@ -119,12 +127,15 @@ namespace Nyc.Rendering
                     };
                     Graphics.RenderMeshInstanced(renderParamsFoliage, crownMesh, 0, matrices, count);
 
-                    var renderParamsTrunk = new RenderParams(trunkMaterial)
+                    if (trunkMesh != null)
                     {
-                        shadowCastingMode = ShadowCastingMode.On,
-                        receiveShadows = true
-                    };
-                    Graphics.RenderMeshInstanced(renderParamsTrunk, trunkMesh, 0, matrices, count);
+                        var renderParamsTrunk = new RenderParams(trunkMaterial)
+                        {
+                            shadowCastingMode = ShadowCastingMode.On,
+                            receiveShadows = true
+                        };
+                        Graphics.RenderMeshInstanced(renderParamsTrunk, trunkMesh, 0, matrices, count);
+                    }
                 }
             }
         }
@@ -211,7 +222,8 @@ namespace Nyc.Rendering
                     float x = ave.X;
                     foreach (var s in ave.Segs)
                     {
-                        for (float z = s.Z0 + 20f; z < s.Z1 - 20f; z += 42f)
+                        // Trees placed at +36m offset (alternates with streetlights at +15m, 21m separation)
+                        for (float z = s.Z0 + 36f; z < s.Z1 - 20f; z += 42f)
                         {
                             if (totalPlanted >= maxInstances) break;
                             // Left sidewalk
@@ -308,49 +320,88 @@ namespace Nyc.Rendering
             var colors = new List<Color32>();
             var tris = new List<int>();
 
-            int rings = 12, segments = 16;
-            Vector3 center = new Vector3(0, verticalOffset + height * 0.5f, 0);
+            Vector3 treeCenter = new Vector3(0, verticalOffset + height * 0.5f, 0);
 
-            for (int r = 0; r <= rings; r++)
+            // Define multi-cluster foliage structure:
+            // 1 main crown dome + 5 to 7 satellite leaf clumps branching out
+            var clumps = new List<FoliageClump>
             {
-                float v = r / (float)rings;
-                float phi = v * Mathf.PI;
-                for (int seg = 0; seg <= segments; seg++)
+                // Core central crown
+                new FoliageClump
                 {
-                    float u = seg / (float)segments;
-                    float theta = u * Mathf.PI * 2f;
-
-                    // Organic multi-lobe deformation from trees.js
-                    float lobeNoise = 1.0f + 0.16f * Mathf.Sin(theta * lobes) + 0.10f * Mathf.Cos(phi * 3f);
-                    float rx = Mathf.Sin(phi) * Mathf.Cos(theta) * radius * lobeNoise;
-                    float rz = Mathf.Sin(phi) * Mathf.Sin(theta) * radius * lobeNoise;
-                    float ry = Mathf.Cos(phi) * height * 0.5f;
-
-                    Vector3 pos = center + new Vector3(rx, ry, rz);
-                    Vector3 normal = (pos - center).normalized;
-
-                    // Bake sway weight into Red channel (top of crown sways more), ambient occlusion into Green
-                    float swayWeight = Mathf.Clamp01((pos.y - verticalOffset) / height);
-                    float occlusion = Mathf.Lerp(0.6f, 1.0f, v);
-                    byte swayByte = (byte)(swayWeight * 255);
-                    byte occByte = (byte)(occlusion * 255);
-
-                    verts.Add(pos);
-                    norms.Add(normal);
-                    uvs.Add(new Vector2(u, v));
-                    colors.Add(new Color32(swayByte, occByte, 0, 255));
+                    Offset = new Vector3(0f, height * 0.45f, 0f),
+                    Radii = new Vector3(radius * 0.82f, height * 0.46f, radius * 0.82f)
                 }
+            };
+
+            int clusterCount = Mathf.Clamp(lobes, 5, 7);
+            for (int k = 0; k < clusterCount; k++)
+            {
+                float ang = (k / (float)clusterCount) * Mathf.PI * 2f + (seed * 0.17f);
+                float distFrac = 0.58f + 0.15f * Mathf.Sin(k * 2.3f + seed);
+                float yFrac = 0.22f + 0.52f * (k / (float)clusterCount);
+                float clumpR = radius * (0.42f + 0.14f * Mathf.Cos(k * 1.7f));
+                float clumpH = height * (0.34f + 0.10f * Mathf.Sin(k * 1.9f));
+
+                clumps.Add(new FoliageClump
+                {
+                    Offset = new Vector3(Mathf.Cos(ang) * radius * distFrac, height * yFrac, Mathf.Sin(ang) * radius * distFrac),
+                    Radii = new Vector3(clumpR, clumpH, clumpR)
+                });
             }
 
-            for (int r = 0; r < rings; r++)
+            int rings = 7, segments = 10;
+            foreach (var clump in clumps)
             {
-                for (int seg = 0; seg < segments; seg++)
-                {
-                    int i0 = r * (segments + 1) + seg;
-                    int i1 = i0 + segments + 1;
+                int baseIndex = verts.Count;
+                Vector3 clumpCenter = new Vector3(0, verticalOffset, 0) + clump.Offset;
 
-                    tris.Add(i0); tris.Add(i1); tris.Add(i0 + 1);
-                    tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1 + 1);
+                for (int r = 0; r <= rings; r++)
+                {
+                    float v = r / (float)rings;
+                    float phi = v * Mathf.PI;
+                    for (int seg = 0; seg <= segments; seg++)
+                    {
+                        float u = seg / (float)segments;
+                        float theta = u * Mathf.PI * 2f;
+
+                        // Scalloped organic leaf surface noise
+                        float noise = 1.0f + 0.14f * Mathf.Sin(theta * 4f + phi * 3f + seed)
+                                           + 0.08f * Mathf.Cos(theta * 7f - phi * 2f);
+
+                        float rx = Mathf.Sin(phi) * Mathf.Cos(theta) * clump.Radii.x * noise;
+                        float rz = Mathf.Sin(phi) * Mathf.Sin(theta) * clump.Radii.z * noise;
+                        float ry = Mathf.Cos(phi) * clump.Radii.y * noise;
+
+                        Vector3 pos = clumpCenter + new Vector3(rx, ry, rz);
+                        // Normal pointing outward from whole crown center for lush unified volumetric shading
+                        Vector3 normal = (pos - (treeCenter + Vector3.up * 1.2f)).normalized;
+
+                        float swayWeight = Mathf.Clamp01((pos.y - verticalOffset) / height);
+                        float distFromTreeCenter = Vector3.Distance(pos, treeCenter);
+                        float occlusion = Mathf.Clamp01(distFromTreeCenter / (radius * 1.1f));
+                        float ao = Mathf.Lerp(0.48f, 1.0f, occlusion);
+
+                        byte swayByte = (byte)(swayWeight * 255);
+                        byte occByte = (byte)(ao * 255);
+
+                        verts.Add(pos);
+                        norms.Add(normal);
+                        uvs.Add(new Vector2(u, v));
+                        colors.Add(new Color32(swayByte, occByte, 0, 255));
+                    }
+                }
+
+                for (int r = 0; r < rings; r++)
+                {
+                    for (int seg = 0; seg < segments; seg++)
+                    {
+                        int i0 = baseIndex + r * (segments + 1) + seg;
+                        int i1 = i0 + segments + 1;
+
+                        tris.Add(i0); tris.Add(i1); tris.Add(i0 + 1);
+                        tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1 + 1);
+                    }
                 }
             }
 
@@ -372,26 +423,30 @@ namespace Nyc.Rendering
             var colors = new List<Color32>();
             var tris = new List<int>();
 
-            int radial = 8, heightSegs = 6;
+            int radial = 8, heightSegs = 8;
             for (int h = 0; h <= heightSegs; h++)
             {
                 float t = h / (float)heightSegs;
                 float y = t * height;
-                float r = Mathf.Lerp(rBase, rTop, t);
+
+                // Root flare at ground base (y < 0.6m) and gentle lean
+                float flare = Mathf.Exp(-y / 0.42f) * 0.75f;
+                float r = Mathf.Lerp(rBase, rTop, t) * (1f + flare);
+                float leanX = Mathf.Sin(t * 1.5f + seed * 0.5f) * 0.18f;
+                float leanZ = Mathf.Cos(t * 1.2f + seed * 0.3f) * 0.15f;
 
                 for (int i = 0; i <= radial; i++)
                 {
                     float angle = (i / (float)radial) * Mathf.PI * 2f;
                     float cs = Mathf.Cos(angle), sn = Mathf.Sin(angle);
 
-                    Vector3 pos = new Vector3(cs * r, y, sn * r);
-                    Vector3 n = new Vector3(cs, 0, sn);
+                    Vector3 pos = new Vector3(cs * r + leanX, y, sn * r + leanZ);
+                    Vector3 n = new Vector3(cs, 0.1f * t, sn).normalized;
 
-                    // Trunk base doesn't sway, upper trunk sways slightly
-                    byte sway = (byte)(t * 64);
+                    byte sway = (byte)(t * 70);
                     verts.Add(pos);
                     norms.Add(n);
-                    uvs.Add(new Vector2(i / (float)radial, t * 2f));
+                    uvs.Add(new Vector2(i / (float)radial, t * 2.5f));
                     colors.Add(new Color32(sway, 255, 0, 255));
                 }
             }
@@ -405,6 +460,53 @@ namespace Nyc.Rendering
 
                     tris.Add(i0); tris.Add(i1); tris.Add(i0 + 1);
                     tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1 + 1);
+                }
+            }
+
+            // Add 3-4 scaffold branch limbs reaching up into the canopy
+            int branchCount = Mathf.Clamp(branches, 3, 4);
+            float forkY = height * 0.68f;
+            for (int b = 0; b < branchCount; b++)
+            {
+                int bBase = verts.Count;
+                float bAng = (b / (float)branchCount) * Mathf.PI * 2f + seed * 0.4f;
+                Vector3 bDir = new Vector3(Mathf.Cos(bAng) * 0.75f, 0.65f, Mathf.Sin(bAng) * 0.75f).normalized;
+                Vector3 startP = new Vector3(Mathf.Cos(bAng) * rTop * 0.8f, forkY, Mathf.Sin(bAng) * rTop * 0.8f);
+                float bLen = height * 0.38f;
+                float bRad0 = rTop * 0.55f;
+                float bRad1 = rTop * 0.22f;
+
+                int bSegs = 3, bRadSegs = 5;
+                for (int s = 0; s <= bSegs; s++)
+                {
+                    float st = s / (float)bSegs;
+                    Vector3 cp = startP + bDir * (st * bLen);
+                    float cr = Mathf.Lerp(bRad0, bRad1, st);
+
+                    Vector3 bU = Vector3.Cross(bDir, Vector3.up).normalized;
+                    if (bU.sqrMagnitude < 0.01f) bU = Vector3.right;
+                    Vector3 bV = Vector3.Cross(bU, bDir).normalized;
+
+                    for (int ri = 0; ri <= bRadSegs; ri++)
+                    {
+                        float ra = (ri / (float)bRadSegs) * Mathf.PI * 2f;
+                        Vector3 ringOff = (bU * Mathf.Cos(ra) + bV * Mathf.Sin(ra)) * cr;
+                        verts.Add(cp + ringOff);
+                        norms.Add((ringOff).normalized);
+                        uvs.Add(new Vector2(ri / (float)bRadSegs, st));
+                        colors.Add(new Color32(90, 255, 0, 255));
+                    }
+                }
+
+                for (int s = 0; s < bSegs; s++)
+                {
+                    for (int ri = 0; ri < bRadSegs; ri++)
+                    {
+                        int i0 = bBase + s * (bRadSegs + 1) + ri;
+                        int i1 = i0 + bRadSegs + 1;
+                        tris.Add(i0); tris.Add(i1); tris.Add(i0 + 1);
+                        tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1 + 1);
+                    }
                 }
             }
 

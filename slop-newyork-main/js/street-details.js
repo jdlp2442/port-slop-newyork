@@ -123,12 +123,12 @@ function buildStreetDetails(scene) {
 
   // Shared materials
   const poleMetalMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x3b4046,
+    name: 'prop_signal_pole', color: 0x3b4046,
     roughness: 0.45,
     metalness: 0.78
   });
   const nycYellowSignalMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xe6a817, // Authentic NYC DOT school-bus/marigold yellow housing
+    name: 'prop_signal_head', color: 0xe6a817, // Authentic NYC DOT school-bus/marigold yellow housing
     roughness: 0.38,
     metalness: 0.35,
     side: THREE.DoubleSide // the tunnel visors are open half-tubes
@@ -138,11 +138,13 @@ function buildStreetDetails(scene) {
   const walkSignalGlow = createWalkSignalMaterial(signalClock);
   // Cobra-head LED streetlight lens & pedestrian post-top globe: pale diffuser by day, warm white after dusk
   const lampBulbGlow = new THREE.MeshBasicNodeMaterial();
+  lampBulbGlow.name = 'prop_lamp_lens';
   lampBulbGlow.colorNode = mix(color(0x8f918c), color(0xfff1d6).mul(2.1), smoothstep(0.4, 1.1, cityUniforms.uInteriorGlow));
   const pedGlobeGlow = new THREE.MeshBasicNodeMaterial();
+  pedGlobeGlow.name = 'prop_ped_globe';
   pedGlobeGlow.colorNode = mix(color(0xd4d2c8), color(0xffe4b0).mul(1.95), smoothstep(0.4, 1.1, cityUniforms.uInteriorGlow));
   const streetBladeMat = new THREE.MeshStandardNodeMaterial({
-    map: createStreetSignBladeTexture('5TH AVE · 42 ST'),
+    name: 'prop_street_blade', map: createStreetSignBladeTexture('5TH AVE · 42 ST'),
     roughness: 0.32
   });
 
@@ -477,6 +479,8 @@ function buildStreetDetails(scene) {
   function addMatrixArrayInstanced(geo, mat, matrices, castShadow = true) {
     if (matrices.length === 0) return;
     const inst = new THREE.InstancedMesh(geo, mat, matrices.length);
+    // Name the batch so offline exporters (tools/export-actors-glb.js) can identify each prop.
+    inst.name = (mat && mat.name) ? mat.name : ('prop_' + geo.id);
     if (castShadow && !mat.isMeshBasicNodeMaterial && mat.type !== 'MeshBasicNodeMaterial' && !mat.transparent) {
       inst.castShadow = true;
       inst.receiveShadow = true;
@@ -551,11 +555,11 @@ function buildStreetDetails(scene) {
   }
 
   const steamOrangeMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xff5518, // High-visibility ConEd safety orange
+    name: 'prop_steam_orange', color: 0xff5518, // High-visibility ConEd safety orange
     roughness: 0.42
   });
   const steamWhiteMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xf4f6f8,
+    name: 'prop_steam_white', color: 0xf4f6f8,
     roughness: 0.45
   });
   const steamMat = createSteamMaterial();
@@ -674,11 +678,11 @@ function buildStreetDetails(scene) {
   // 4. MTA SUBWAY ENTRANCES WITH GLOWING GREEN GLOBE LAMPS
   // =========================================================================
   const subwayRailingMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x1a3826, // Classic MTA Subway forest green ironwork
+    name: 'prop_subway_railing', color: 0x1a3826, // Classic MTA Subway forest green ironwork
     roughness: 0.5,
     metalness: 0.65
   });
-  const mtaGlobeMat = new THREE.MeshBasicNodeMaterial({ color: 0x55ff88 });
+  const mtaGlobeMat = new THREE.MeshBasicNodeMaterial({ name: 'prop_subway_globe', color: 0x55ff88 });
 
   const subwayLocations = [
     [-16.5, 162],  // 34th St - Herald Sq / 5th Ave
@@ -744,12 +748,12 @@ function buildStreetDetails(scene) {
   // 5. NYC HOT DOG / HALAL FOOD CARTS WITH UMBRELLAS & SIDEWALK PROPS
   // =========================================================================
   const cartSteelMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xd0d8e0,
+    name: 'prop_cart_body', color: 0xd0d8e0,
     roughness: 0.25,
     metalness: 0.88
   });
   const umbrellaMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x1e64d8, // Classic NYC blue & yellow umbrella
+    name: 'prop_cart_umbrella', color: 0x1e64d8, // Classic NYC blue & yellow umbrella
     roughness: 0.6
   });
 
@@ -803,7 +807,7 @@ function buildStreetDetails(scene) {
     }
   }
 
-  const hydrantMat = new THREE.MeshStandardNodeMaterial({ color: 0xb8241e, roughness: 0.5, metalness: 0.4 });
+  const hydrantMat = new THREE.MeshStandardNodeMaterial({ name: 'prop_hydrant', color: 0xb8241e, roughness: 0.5, metalness: 0.4 });
   const hydrantInst = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.26, 0.85, 8), hydrantMat, hydrantPositions.length);
   hydrantPositions.forEach(([hx, hz], i) => {
     dummy.position.set(hx, 0.64, hz);
@@ -815,7 +819,7 @@ function buildStreetDetails(scene) {
   hydrantInst.instanceMatrix.needsUpdate = true;
   group.add(hydrantInst);
 
-  const uspsMat = new THREE.MeshStandardNodeMaterial({ color: 0x183c7a, roughness: 0.45, metalness: 0.35 });
+  const uspsMat = new THREE.MeshStandardNodeMaterial({ name: 'prop_mailbox', color: 0x183c7a, roughness: 0.45, metalness: 0.35 });
   const mailboxInst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.65, 1.25, 0.65), uspsMat, mailboxPositions.length);
   mailboxPositions.forEach(([mx, mz], i) => {
     dummy.position.set(mx, 0.84, mz);
@@ -1014,8 +1018,8 @@ function buildStreetDetails(scene) {
   console.info(`[streetDetails] ${treePositions.length} trees (${sidewalkTreePositions.length} street trees)`);
 
   const grateMat = createTreeGrateMaterial();
-  const pitCurbMat = new THREE.MeshStandardNodeMaterial({ color: 0x484642, roughness: 0.88 });
-  const pitSoilMat = new THREE.MeshStandardNodeMaterial({ color: 0x241c14, roughness: 0.96 });
+  const pitCurbMat = new THREE.MeshStandardNodeMaterial({ name: 'prop_tree_pit_curb', color: 0x484642, roughness: 0.88 });
+  const pitSoilMat = new THREE.MeshStandardNodeMaterial({ name: 'prop_tree_pit_soil', color: 0x241c14, roughness: 0.96 });
 
   // Curbside tree pit surrounds & dark soil beds, with concentric cast-iron grates on the Midtown avenues
   // (pits run along the curb: t.pitRot = PI/2 on cross streets)

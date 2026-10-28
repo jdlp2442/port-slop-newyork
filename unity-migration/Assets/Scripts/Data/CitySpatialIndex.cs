@@ -70,7 +70,7 @@ namespace Nyc.Core
         public static bool IsOnSidewalk(float x, float z)
         {
             BlockRec b = BlockAt(x, z);
-            return b != null && !(b.Park > 0.6f && !b.Median);
+            return b != null && !b.Median && !(b.Park > 0.6f);
         }
 
         public static bool PointInPolygon(Vector2[] poly, float x, float z)

@@ -135,9 +135,18 @@ namespace Nyc.Generation
                 }
                 for (int i = 0; i < tris.Count; i += 3)
                 {
-                    topTris.Add(baseTop + tris[i]);
-                    topTris.Add(baseTop + tris[i + 1]);
-                    topTris.Add(baseTop + tris[i + 2]);
+                    int i0 = baseTop + tris[i];
+                    int i1 = baseTop + tris[i + 1];
+                    int i2 = baseTop + tris[i + 2];
+                    Vector3 cr = Vector3.Cross(topVerts[i1] - topVerts[i0], topVerts[i2] - topVerts[i0]);
+                    if (Vector3.Dot(cr, Vector3.up) < 0f)
+                    {
+                        topTris.Add(i0); topTris.Add(i2); topTris.Add(i1);
+                    }
+                    else
+                    {
+                        topTris.Add(i0); topTris.Add(i1); topTris.Add(i2);
+                    }
                 }
 
                 // Vertical Bulkhead Quads along shoreline
@@ -441,7 +450,11 @@ namespace Nyc.Generation
                 float maxZ = Mathf.Max(Mathf.Max(c0.y, c1.y), Mathf.Max(c2.y, c3.y));
                 CollisionBoxes.Add(new CollisionBox
                 {
-                    MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ, MaxY = 1.2f
+                    MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ, MaxY = 1.2f,
+                    HasObb = true,
+                    Cx = cx, Cz = cz,
+                    Hx = hl, Hz = hw,
+                    Cs = cs, Sn = sn
                 });
             }
 

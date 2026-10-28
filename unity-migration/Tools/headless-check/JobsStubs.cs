@@ -13,12 +13,15 @@ namespace UnityEngine
         public static Matrix4x4 TRS(Vector3 pos, Quaternion rot, Vector3 scale) => new Matrix4x4();
         public static Matrix4x4 identity => new Matrix4x4();
         public Matrix4x4 inverse => this;
+        public static Matrix4x4 operator *(Matrix4x4 a, Matrix4x4 b) => new Matrix4x4();
     }
 
     public struct Bounds
     {
         public Vector3 center, size;
         public Vector3 extents => size * 0.5f;
+        public Vector3 min => center - extents;
+        public Vector3 max => center + extents;
         public Bounds(Vector3 center, Vector3 size) { this.center = center; this.size = size; }
         public void Encapsulate(Bounds b) { }
     }

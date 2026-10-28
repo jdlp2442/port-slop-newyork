@@ -101,4 +101,35 @@ fase anterior con estado provisional.
 
 ## Estado inicial y siguiente bloque
 
-Fases 0 y 1 están instrumentadas: escena jugable, snapshots deterministas, fixed-step, contactos de tráfico, BRG piloto y matriz de capturas Unity. La Fase 2 está parcialmente implementada con yield conservador en curb/crosswalk, consultas de ocupación de peatones, cambios de carril anticipados con cache de adyacencias paralelas y prioridad de giro con cesión frente a tráfico contrario. Se añadió reserva determinista de la conexión de salida por tick (`merge claims`) para evitar entradas simultáneas. La validación actual produce snapshots deterministas (`net DE01D860F5065F00`, `traffic C883092F46DAFE60`), 33.601 carriles, 149.765 conexiones, 232 agentes activos y 0 NaN. El spawn/despawn ya usa streams por vehículo (`SpawnId` + `RespawnCount`) y no depende del orden global de actualización. Se añadió `Tools/parity/traffic-fixtures.json` y su validación headless: 6 casos de ocupación de carril, alturas, helicóptero, borde de lane y merge claim con seed 10019. Se añadió `PreviewNextLane` y la validación de 99.474 casos lane/roll deterministas sobre las 33.601 lanes. El siguiente bloque concreto es comparar esos snapshots con decisiones exportadas de `js/traffic.js`; Además se añadió interpolación visual entre estados fijos en `TravelController`, eliminando el escalonado de peatones y vehículos cuando el render no coincide con 60 Hz. La fase visual ya incluye interpolación del jugador y de la multitud instanciada, con corrección del wrap perimetral de peatones. La siguiente mejora de actores añadió la librea MTA del bus (carrocería blanca, banda azul y cinta cian) como partes de mesh y shader, sin aumentar draw calls. El próximo bloque es aplicar la misma comparación a taxi/NYPD/helicóptero y validar capturas por ubicación.
+Fases 0 y 1 están instrumentadas: escena jugable, snapshots deterministas, fixed-step, contactos de tráfico, BRG piloto y matriz de capturas Unity. La Fase 2 está parcialmente implementada con yield conservador en curb/crosswalk, consultas de ocupación de peatones, cambios de carril anticipados con cache de adyacencias paralelas y prioridad de giro con cesión frente a tráfico contrario. Se añadió reserva determinista de la conexión de salida por tick (`merge claims`) para evitar entradas simultáneas. La validación actual produce snapshots deterministas (`net DE01D860F5065F00`, `traffic C883092F46DAFE60`), 33.601 carriles, 149.765 conexiones, 232 agentes activos y 0 NaN. El spawn/despawn ya usa streams por vehículo (`SpawnId` + `RespawnCount`) y no depende del orden global de actualización. Se añadió `Tools/parity/traffic-fixtures.json` y su validación headless: 6 casos de ocupación de carril, alturas, helicóptero, borde de lane y merge claim con seed 10019. Se añadió `PreviewNextLane` y la validación de 99.474 casos lane/roll deterministas sobre las 33.601 lanes. El siguiente bloque concreto es comparar esos snapshots con decisiones exportadas de `js/traffic.js`; Además se añadió interpolación visual entre estados fijos en `TravelController`, eliminando el escalonado de peatones y vehículos cuando el render no coincide con 60 Hz. La fase visual ya incluye interpolación del jugador y de la multitud instanciada, con corrección del wrap perimetral de peatones. La siguiente mejora de actores añadió la librea MTA del bus (carrocería blanca, banda azul y cinta cian) como partes de mesh y shader, sin aumentar draw calls. El taxi controlable ya incorpora placas NY, medalliones T&LC en puertas y hubs de aleación separados en las ruedas, además de su señal de techo. El próximo bloque es comparar capturas del taxi Unity/Web y corregir diferencias de cámara, decals y luces antes de pasar a NYPD/helicóptero.
+## Correcciones posteriores a la auditoría visual
+
+Se corrigieron tres regresiones de jugabilidad: pool de peatones con hysteresis y seed estable, techos de props con material oscuro y contacto dinámico coche-tráfico con impulso y respuesta de suspensión. El siguiente bloque es capturar recorridos en movimiento para medir flicker y comparar azoteas desde helicóptero antes de continuar con el rig avanzado de pedestrians.js.
+
+## Auditoría temporal
+
+La secuencia de 120 ticks a 60 Hz produjo meanFrameDiff 0.004698, maxFrameDiff 0.009481 y 0 frames con diferencia alta. Se generaron 12 frames del coche y helicopter_roofs.png; no hubo flicker detectable. El siguiente bloque es mejorar materiales de fachadas/azoteas y avanzar el rig de peatones e impactos visuales.
+
+## Taxi y siguiente bloque de props
+
+La carrocería del taxi controlable ya usa un loft procedural derivado de `BODY_SPECS.taxi` y
+`bodyProfile` de `js/actor-models.js`, con la conversión de coordenadas `(x, y, -z)` aplicada una
+sola vez. El bloque incluye pintura, cristal, letrero, placas, medallones, ruedas, faros y luces
+traseras. La captura de movimiento actual es `D:/escena/Captures/Movement/car_000.png` y sus
+métricas son `meanFrameDiff 0.004592`, `maxFrameDiff 0.009682`, `highDiffFrames 0`.
+
+El port de props seguirá este orden:
+
+1. `street-details.js`: farolas, señales, hidrantes, buzones, tapas, humo, railes y bancos;
+   añadir manifiesto de conteo, semilla y transform por familia.
+2. `buildings.js`: marquesinas, fire escapes, anuncios, HVAC, chimeneas y bordes de azotea;
+   comparar primero en Times Square y Midtown.
+3. `trees.js`: especies, troncos, copas y LOD en `TreeSystem`, con validación de Central Park y
+   medianas.
+4. `city-grid.js` / `boroughs.js`: aceras, plazas, muelles, vallas, puentes y landmarks.
+5. Repetir la matriz 4×4 web/Unity y publicar diferencias por familia antes de abrir el siguiente
+   bloque.
+
+El siguiente paso implementable es el manifiesto determinista de farolas, señales y marquesinas y
+su fixture de 4 ubicaciones; la aceptación será igualar conteo, bounds y orientación dentro de la
+tolerancia publicada antes de pasar a árboles.

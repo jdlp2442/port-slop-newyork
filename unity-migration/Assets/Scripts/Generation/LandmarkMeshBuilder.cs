@@ -151,9 +151,12 @@ namespace Nyc.Generation
             // Red beacon
             ctx.AddSphere(new Vector3(0, 325.2f, 0), 0.95f, 8, 8, matBeacon);
 
-            Vector3 bMin = new Vector3(-34, 0, -25);
-            Vector3 bMax = new Vector3(34, 245, 25);
-            AddCollider(c0, bMin, bMax);
+            // Accurate stepped collision matching the iconic ESB wedding-cake tiers
+            AddCollider(c0, new Vector3(-34, 0, -25), new Vector3(34, 22, 25));    // Podium
+            AddCollider(c0, new Vector3(-27, 0, -19), new Vector3(27, 56, 19));    // Tier 1
+            AddCollider(c0, new Vector3(-22, 0, -16), new Vector3(22, 84, 16));    // Tier 2
+            AddCollider(c0, new Vector3(-16, 0, -11), new Vector3(16, 250, 11));   // Main Shaft
+            AddCollider(c0, new Vector3(-4, 0, -4), new Vector3(4, 325, 4));       // Observatory Spire
 
             FitToSite(ctx, geo, "Empire State Building", c0, 443f);
             ctx.FinalizeMesh();
@@ -208,9 +211,12 @@ namespace Nyc.Generation
             // Beacon
             ctx.AddSphere(new Vector3(0, curY + 37.5f, 0), 0.8f, 8, 8, matBeacon);
 
-            Vector3 bMin = new Vector3(-25, 0, -22);
-            Vector3 bMax = new Vector3(25, 225, 22);
-            AddCollider(c0, bMin, bMax);
+            // Stepped collision for Chrysler Building matching its distinct tiers
+            AddCollider(c0, new Vector3(-25, 0, -22), new Vector3(25, 36, 22));    // Base podium
+            AddCollider(c0, new Vector3(-18, 0, -18), new Vector3(18, 78, 18));    // Lower setback
+            AddCollider(c0, new Vector3(-12, 0, -12), new Vector3(12, 215, 12));   // Main tower
+            AddCollider(c0, new Vector3(-8, 0, -8), new Vector3(8, 260, 8));       // Crown
+            AddCollider(c0, new Vector3(-2, 0, -2), new Vector3(2, 319, 2));       // Spire needle
 
             FitToSite(ctx, geo, "Chrysler Building", c0, 319f);
             ctx.FinalizeMesh();
@@ -252,9 +258,13 @@ namespace Nyc.Generation
             // Spire
             ctx.AddCylinder(new Vector3(0, 260f, 0), 0.18f, 0.95f, 30f, 8, matFlood);
 
-            Vector3 bMin = new Vector3(-20, 0, -19);
-            Vector3 bMax = new Vector3(20, 260, 19);
-            AddCollider(c0, bMin, bMax);
+            // Tapered collision for One Vanderbilt matching its 5 setback blocks
+            AddCollider(c0, new Vector3(-20, 0, -19), new Vector3(20, 68, 19));    // Base segment
+            AddCollider(c0, new Vector3(-17.5f, 0, -16.5f), new Vector3(17.5f, 138, 16.5f)); // Tier 2
+            AddCollider(c0, new Vector3(-14.5f, 0, -14), new Vector3(14.5f, 198, 14));       // Tier 3
+            AddCollider(c0, new Vector3(-11.5f, 0, -11), new Vector3(11.5f, 238, 11));       // Tier 4
+            AddCollider(c0, new Vector3(-7.5f, 0, -7.5f), new Vector3(7.5f, 260, 7.5f));     // Crown
+            AddCollider(c0, new Vector3(-2, 0, -2), new Vector3(2, 290, 2));                 // Spire
 
             FitToSite(ctx, geo, "One Vanderbilt", c0, 427f);
             ctx.FinalizeMesh();
@@ -319,9 +329,9 @@ namespace Nyc.Generation
             // MetLife sign band
             ctx.AddBox(new Vector3(0, 191, -12), new Vector3(28.5f, 6.8f, 25.4f), matSign);
 
-            Vector3 bMin = new Vector3(-34, 0, -28);
-            Vector3 bMax = new Vector3(34, 198, 28);
-            AddCollider(c0, bMin, bMax);
+            // Separate MetLife tower from Grand Central Terminal so the station rooftop is flyable/walkable
+            AddCollider(c0, new Vector3(-34, 0, -26), new Vector3(34, 198, 2));    // MetLife tower (198m)
+            AddCollider(c0, new Vector3(-30, 0, 2), new Vector3(30, 28, 44));       // Grand Central Terminal (28m)
 
             FitToSiteUnion(ctx, geo, new[] { "Grand Central Terminal", "MetLife Building" }, c0, 246f);
             ctx.FinalizeMesh();
@@ -397,9 +407,21 @@ namespace Nyc.Generation
             var ctx = new LandmarkContext("OneTimesSquare", root);
 
             int matDark = ctx.RegisterMaterial(bronzeCurtainMaterial);
-            int matScreen = ctx.RegisterMaterial(signMaterial);
             int matSteel = ctx.RegisterMaterial(stainlessSteelMaterial);
             int matBall = ctx.RegisterMaterial(beaconMaterial);
+
+            // Times Square's web landmark uses a stack of saturated emissive screens rather
+            // than one neutral sign material. Keep the panels in the same combined mesh so the
+            // port gains the visual cue without adding per-screen GameObjects or draw calls.
+            var screenMaterials = new[]
+            {
+                MakeBillboardMaterial(0, new Color(0.42f, 0.015f, 0.025f), new Color(2.8f, 0.08f, 0.04f)),
+                MakeBillboardMaterial(1, new Color(0.015f, 0.08f, 0.52f), new Color(0.04f, 0.35f, 2.6f)),
+                MakeBillboardMaterial(2, new Color(0.55f, 0.015f, 0.04f), new Color(2.5f, 0.05f, 0.05f)),
+                MakeBillboardMaterial(3, new Color(0.15f, 0.12f, 0.08f), new Color(2.6f, 0.72f, 0.04f)),
+                MakeBillboardMaterial(4, new Color(0.01f, 0.40f, 0.58f), new Color(0.02f, 1.7f, 2.4f)),
+                MakeBillboardMaterial(5, new Color(0.55f, 0.015f, 0.34f), new Color(2.2f, 0.03f, 1.4f))
+            };
 
             float otsW = 18f, otsD = 26f, otsH = 118f, otsX = -16f;
             ctx.AddBox(new Vector3(otsX, otsH * 0.5f, 14), new Vector3(otsW, otsH, otsD), matDark);
@@ -409,6 +431,7 @@ namespace Nyc.Generation
             {
                 float panelH = 17.5f;
                 float panelY = 14f + s * 19.5f;
+                int matScreen = ctx.RegisterMaterial(screenMaterials[s % screenMaterials.Length]);
                 // West screen
                 ctx.AddBox(new Vector3(otsX - otsW * 0.5f - 0.25f, panelY, 14), new Vector3(0.5f, panelH, otsD - 2), matScreen);
                 // South screen
@@ -416,6 +439,18 @@ namespace Nyc.Generation
                 // North screen
                 ctx.AddBox(new Vector3(otsX, panelY, 14 - otsD * 0.5f - 0.25f), new Vector3(otsW - 2, panelH, 0.5f), matScreen);
             }
+
+            // Broadway bow-tie frontage: the web scene carries large ad walls on the blocks
+            // around One Times Square. These four shallow panels reproduce that visible mass
+            // while remaining part of the same combined landmark mesh.
+            int frontageA = ctx.RegisterMaterial(screenMaterials[1]);
+            int frontageB = ctx.RegisterMaterial(screenMaterials[2]);
+            int frontageC = ctx.RegisterMaterial(screenMaterials[3]);
+            int frontageD = ctx.RegisterMaterial(screenMaterials[4]);
+            ctx.AddBox(new Vector3(-43f, 31f, 10f), new Vector3(0.45f, 42f, 54f), frontageA);
+            ctx.AddBox(new Vector3(18f, 34f, 10f), new Vector3(0.45f, 48f, 54f), frontageB);
+            ctx.AddBox(new Vector3(-12f, 28f, -24f), new Vector3(54f, 36f, 0.45f), frontageC);
+            ctx.AddBox(new Vector3(-12f, 40f, 48f), new Vector3(54f, 56f, 0.45f), frontageD);
 
             // Ball mast & NYE ball
             ctx.AddCylinder(new Vector3(otsX, otsH, 14), 0.35f, 0.5f, 26f, 8, matSteel);
@@ -449,9 +484,9 @@ namespace Nyc.Generation
             // Prometheus fountain statue
             ctx.AddCylinder(new Vector3(1, 3.8f, 0), 2.6f, 2.6f, 0.9f, 16, matGold, rotX90: true);
 
-            Vector3 bMin = new Vector3(-32, 0, -28);
-            Vector3 bMax = new Vector3(4, 212, 28);
-            AddCollider(c0, bMin, bMax);
+            // Stepped collision for 30 Rock matching stepped tower massing
+            AddCollider(c0, new Vector3(-32, 0, -28), new Vector3(4, 70, 28));     // Base stepped wings
+            AddCollider(c0, new Vector3(-26, 0, -26), new Vector3(-2, 212, 26));   // Central slender high-rise tower
 
             FitToSite(ctx, geo, "30 Rockefeller Plaza", c0, 259f);
             ctx.FinalizeMesh();
@@ -481,9 +516,9 @@ namespace Nyc.Generation
             // 45-degree sloped roof crown
             ctx.AddWedge(new Vector3(0, 175, 0), new Vector3(42, 34, 42), matSteel);
 
-            Vector3 bMin = new Vector3(-21, 0, -21);
-            Vector3 bMax = new Vector3(21, 209, 21);
-            AddCollider(c0, bMin, bMax);
+            // Citigroup Center: central core at plaza level, full tower above stilts
+            AddCollider(c0, new Vector3(-8, 0, -8), new Vector3(8, 30, 8));        // Central elevator core on plaza
+            AddCollider(c0, new Vector3(-21, 0, -21), new Vector3(21, 209, 21));   // Main tower block
 
             FitToSite(ctx, geo, "Citigroup Center", c0, 279f);
             ctx.FinalizeMesh();
@@ -517,9 +552,10 @@ namespace Nyc.Generation
             };
             ctx.AddExtrudedPolygon(cornicePoints, 88f, 2.8f, matTrim);
 
-            Vector3 bMin = new Vector3(-13, 0, -26);
-            Vector3 bMax = new Vector3(11, 90, 24);
-            AddCollider(c0, bMin, bMax);
+            // Tapered wedge collision matching triangular geometry (prevents clipping on 5th Ave and Broadway)
+            AddCollider(c0, new Vector3(-3.8f, 0, -26f), new Vector3(3.8f, 90f, -10f)); // Prow (narrow tip)
+            AddCollider(c0, new Vector3(-8f, 0, -10f), new Vector3(7.2f, 90f, 8f));     // Midsection
+            AddCollider(c0, new Vector3(-13f, 0, 8f), new Vector3(11f, 90f, 24f));      // Wide southern base
 
             FitToSite(ctx, geo, "Flatiron Building", c0, 87f);
             ctx.FinalizeMesh();
@@ -592,9 +628,9 @@ namespace Nyc.Generation
             // Beacon
             ctx.AddSphere(new Vector3(0, 364f, 0), 1.4f, 10, 10, matFlood);
 
-            Vector3 bMin = new Vector3(-25, 0, -25);
-            Vector3 bMax = new Vector3(25, 364, 25);
-            AddCollider(c0, bMin, bMax);
+            // Stepped collision for One WTC: solid tower shaft vs slender telecommunication spire
+            AddCollider(c0, new Vector3(-25, 0, -25), new Vector3(25, 295, 25)); // Main tower block & parapet
+            AddCollider(c0, new Vector3(-3.5f, 0, -3.5f), new Vector3(3.5f, 364, 3.5f)); // Spire mast & beacon
 
             FitToSite(ctx, geo, "One World Trade Center", c0, 541f, horizontal: 1.27f);
             ctx.FinalizeMesh();
@@ -813,9 +849,10 @@ namespace Nyc.Generation
             ctx.AddCylinder(new Vector3(0, 228f, -4f), 0.25f, 1.5f, 13f, 8, matCopper);
             ctx.AddSphere(new Vector3(0, 241f, -4f), 0.85f, 8, 8, matBeacon);
 
-            Vector3 bMin = new Vector3(-27f, 0, -27f);
-            Vector3 bMax = new Vector3(27f, 241f, 27f);
-            AddCollider(c0, bMin, bMax);
+            // Stepped collision for Woolworth Building matching podium, tower, and pinnacle spire
+            AddCollider(c0, new Vector3(-27f, 0, -27f), new Vector3(27f, 108f, 27f)); // Base podium
+            AddCollider(c0, new Vector3(-14f, 0, -18f), new Vector3(14f, 206f, 10f)); // Setback tower shaft
+            AddCollider(c0, new Vector3(-8f, 0, -12f), new Vector3(8f, 241f, 4f));    // Spire & pinnacle
 
             FitToSite(ctx, geo, "Woolworth Building", c0, 241f);
             ctx.FinalizeMesh();
@@ -852,9 +889,11 @@ namespace Nyc.Generation
             ctx.AddWedge(new Vector3(0, 335f, 0), new Vector3(44f, 52f, 38f), matGlass);
             ctx.AddSphere(new Vector3(0, 387f, 0), 1.2f, 8, 8, matBeacon);
 
-            Vector3 bMin = new Vector3(-28f, 0, -25f);
-            Vector3 bMax = new Vector3(40f, 387f, 28f);
-            AddCollider(c0, bMin, bMax);
+            // 30 Hudson Yards: tiered podium, main shaft, and cantilevered observation deck "The Edge"
+            AddCollider(c0, new Vector3(-28f, 0, -24f), new Vector3(28f, 48f, 24f));    // Base podium
+            AddCollider(c0, new Vector3(-23f, 0, -20f), new Vector3(23f, 335f, 20f));   // Main tower shaft
+            AddCollider(c0, new Vector3(17f, 335f, 6f), new Vector3(39f, 345f, 26f));      // "The Edge" cantilever at 335m
+            AddCollider(c0, new Vector3(-22f, 0, -19f), new Vector3(22f, 387f, 19f));   // Angled crown peak
 
             FitToSite(ctx, geo, "30 Hudson Yards", c0, 387f);
             ctx.FinalizeMesh();
@@ -972,6 +1011,7 @@ namespace Nyc.Generation
                 MaxX = localMax.x,
                 MinZ = localMin.z,
                 MaxZ = localMax.z,
+                MinY = localMin.y,
                 MaxY = localMax.y
             });
         }
@@ -1046,7 +1086,7 @@ namespace Nyc.Generation
             }
             else
             {
-                float fit = Mathf.Min(siteW / Mathf.Max(0.1f, localSize.x), siteD / Mathf.Max(0.1f, localSize.z)) * 1.06f;
+                float fit = Mathf.Min(siteW / Mathf.Max(0.1f, localSize.x), siteD / Mathf.Max(0.1f, localSize.z));
                 sx = sz = horizontal > 0f ? horizontal : Mathf.Min(sy, fit);
             }
 
@@ -1073,6 +1113,7 @@ namespace Nyc.Generation
                     MaxX = Mathf.Max(x0, x1),
                     MinZ = Mathf.Min(z0, z1),
                     MaxZ = Mathf.Max(z0, z1),
+                    MinY = k.MinY * sy,
                     MaxY = k.MaxY * sy
                 };
             }
@@ -1080,19 +1121,38 @@ namespace Nyc.Generation
 
         void EnsureMaterials()
         {
-            if (limestoneTrimMaterial == null) limestoneTrimMaterial = MakeMaterial("Landmark_Limestone", new Color(0.85f, 0.81f, 0.74f), 0.32f, 0.12f);
+            if (limestoneTrimMaterial == null) limestoneTrimMaterial = MakeLandmarkFacadeMaterial("Landmark_Limestone", new Color(0.85f, 0.81f, 0.74f), new Color(0.08f, 0.14f, 0.22f), 2.5f, 3.6f, 0.55f, 0.65f, 0.85f, 0.12f);
             if (stainlessSteelMaterial == null) stainlessSteelMaterial = MakeMaterial("Landmark_StainlessSteel", new Color(0.88f, 0.92f, 0.96f), 0.88f, 0.88f);
             if (chryslerCrownMaterial == null) chryslerCrownMaterial = MakeMaterial("Landmark_ChryslerCrown", new Color(0.94f, 0.96f, 0.98f), 0.95f, 0.95f);
             if (darkBronzeFrameMaterial == null) darkBronzeFrameMaterial = MakeMaterial("Landmark_DarkBronze", new Color(0.15f, 0.13f, 0.12f), 0.64f, 0.72f);
             if (copperRoofMaterial == null) copperRoofMaterial = MakeMaterial("Landmark_CopperRoof", new Color(0.29f, 0.53f, 0.44f), 0.48f, 0.28f);
             if (beaconMaterial == null) beaconMaterial = MakeEmissiveMaterial("Landmark_BeaconRed", new Color(1f, 0.17f, 0.17f), new Color(1f, 0.17f, 0.17f) * 2f);
             if (warmFloodMaterial == null) warmFloodMaterial = MakeEmissiveMaterial("Landmark_WarmFlood", new Color(1f, 0.91f, 0.75f), new Color(1f, 0.78f, 0.44f) * 1.5f);
-            if (marbleStoneMaterial == null) marbleStoneMaterial = MakeMaterial("Landmark_MarbleStone", new Color(0.90f, 0.88f, 0.83f), 0.40f, 0.05f);
-            if (silverCurtainMaterial == null) silverCurtainMaterial = MakeMaterial("Landmark_SilverCurtain", new Color(0.12f, 0.24f, 0.35f), 0.90f, 0.85f);
-            if (bronzeCurtainMaterial == null) bronzeCurtainMaterial = MakeMaterial("Landmark_BronzeCurtain", new Color(0.14f, 0.16f, 0.20f), 0.85f, 0.75f);
+            if (marbleStoneMaterial == null) marbleStoneMaterial = MakeLandmarkFacadeMaterial("Landmark_MarbleStone", new Color(0.92f, 0.90f, 0.86f), new Color(0.06f, 0.12f, 0.18f), 2.8f, 3.8f, 0.68f, 0.72f, 0.90f, 0.08f);
+            if (silverCurtainMaterial == null) silverCurtainMaterial = MakeLandmarkFacadeMaterial("Landmark_SilverCurtain", new Color(0.78f, 0.84f, 0.90f), new Color(0.04f, 0.12f, 0.22f), 2.8f, 4.0f, 0.78f, 0.80f, 0.95f, 0.75f);
+            if (bronzeCurtainMaterial == null) bronzeCurtainMaterial = MakeLandmarkFacadeMaterial("Landmark_BronzeCurtain", new Color(0.24f, 0.20f, 0.16f), new Color(0.05f, 0.08f, 0.12f), 2.6f, 3.8f, 0.72f, 0.78f, 0.92f, 0.65f);
             if (parkGrassMaterial == null) parkGrassMaterial = MakeMaterial("Landmark_ParkGrass", new Color(0.22f, 0.55f, 0.26f), 0.20f, 0.0f);
             if (waterMaterial == null) waterMaterial = MakeMaterial("Landmark_Water", new Color(0.14f, 0.47f, 0.61f), 0.92f, 0.65f);
             if (signMaterial == null) signMaterial = MakeEmissiveMaterial("Landmark_Sign", new Color(0.14f, 0.13f, 0.12f), new Color(1f, 0.96f, 0.86f));
+        }
+
+        static Material MakeLandmarkFacadeMaterial(string name, Color stoneCol, Color glassCol, float winW, float flrH, float winRatioX, float winRatioY, float smoothness, float metallic)
+        {
+            var shader = Shader.Find("Nyc/LandmarkFacade");
+            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+
+            var mat = new Material(shader) { name = name };
+            mat.color = stoneCol;
+            if (mat.HasProperty("_StoneColor")) mat.SetColor("_StoneColor", stoneCol);
+            if (mat.HasProperty("_GlassColor")) mat.SetColor("_GlassColor", glassCol);
+            if (mat.HasProperty("_WindowWidth")) mat.SetFloat("_WindowWidth", winW);
+            if (mat.HasProperty("_FloorHeight")) mat.SetFloat("_FloorHeight", flrH);
+            if (mat.HasProperty("_WindowRatioX")) mat.SetFloat("_WindowRatioX", winRatioX);
+            if (mat.HasProperty("_WindowRatioY")) mat.SetFloat("_WindowRatioY", winRatioY);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", metallic);
+            return mat;
         }
 
         static Material MakeMaterial(string name, Color color, float smoothness, float metallic)
@@ -1115,6 +1175,19 @@ namespace Nyc.Generation
                 mat.SetColor("_EmissionColor", emCol);
             }
             return mat;
+        }
+
+        static Material MakeBillboardMaterial(int themeIndex, Color fallbackBase, Color fallbackEm)
+        {
+            var shader = Shader.Find("Nyc/Billboard");
+            if (shader != null)
+            {
+                var mat = new Material(shader) { name = $"TS_Billboard_{themeIndex}" };
+                mat.SetFloat("_ThemeIndex", themeIndex);
+                mat.SetFloat("_EmissionMultiplier", 2.6f);
+                return mat;
+            }
+            return MakeEmissiveMaterial($"TS_Screen_{themeIndex}", fallbackBase, fallbackEm);
         }
 
         // =========================================================================
@@ -1492,7 +1565,18 @@ namespace Nyc.Generation
                 mesh.subMeshCount = subTris.Count;
                 for (int m = 0; m < subTris.Count; m++)
                 {
-                    mesh.SetTriangles(subTris[m], m);
+                    var tris = subTris[m];
+                    for (int t = 0; t + 2 < tris.Count; t += 3)
+                    {
+                        int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+                        Vector3 cr = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]);
+                        if (Vector3.Dot(cr, normals[a]) < 0f)
+                        {
+                            tris[t + 1] = c;
+                            tris[t + 2] = b;
+                        }
+                    }
+                    mesh.SetTriangles(tris, m);
                 }
                 mesh.RecalculateBounds();
 

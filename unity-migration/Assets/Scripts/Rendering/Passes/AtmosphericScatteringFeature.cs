@@ -93,21 +93,24 @@ namespace Nyc.Rendering.Passes
             Color sunColor = new Color(1.0f, 0.96f, 0.88f);
             float sunIntensity = 1.0f;
             float nightFactor = 0f;
+            float fogDensity = _settings.fogDensity;
+            Color haze = _settings.hazeColor;
 
             if (LightingSystem.Instance != null && LightingSystem.Instance.Active != null)
             {
                 var active = LightingSystem.Instance.Active;
-                sunDir = active.sunDir.sqrMagnitude > 1e-6f ? active.sunDir.normalized : Vector3.up;
+                Vector3 uDir = Core.CityFrame.DirToUnity(active.sunDir);
+                sunDir = uDir.sqrMagnitude > 1e-6f ? uDir.normalized : Vector3.up;
                 sunColor = active.sunColor;
                 sunIntensity = active.sunIntensity;
                 nightFactor = active.nightFactor;
+                if (active.fogDensity > 0.00001f) fogDensity = active.fogDensity;
+                haze = active.fogColor;
             }
 
-            _material.SetVector(NycShaderIDs.FogParams, new Vector4(_settings.fogDensity, _settings.heightFalloff, _settings.startDistance, _settings.maxDistance));
+            _material.SetVector(NycShaderIDs.FogParams, new Vector4(fogDensity, 900.0f, _settings.startDistance, _settings.maxDistance));
             _material.SetVector(NycShaderIDs.PassSunDir, new Vector4(sunDir.x, sunDir.y, sunDir.z, sunIntensity));
             _material.SetVector(NycShaderIDs.PassSunColor, new Vector4(sunColor.r, sunColor.g, sunColor.b, nightFactor));
-
-            Color haze = _settings.hazeColor;
             _material.SetVector(NycShaderIDs.HazeColor, new Vector4(haze.r, haze.g, haze.b, _settings.inscatteringBoost));
         }
 

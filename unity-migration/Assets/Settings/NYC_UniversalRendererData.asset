@@ -1,5 +1,85 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-4933987908080302132
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5233d9d46de00a64480af49f01e1d13e, type: 3}
+  m_Name: GunnellSmokeFeature
+  m_EditorClassIdentifier: Assembly-CSharp::GunnellSmoke.GunnellSmokeFeature
+  m_Active: 1
+  debugForce: 0
+  settings:
+    raymarchCompute: {fileID: 7200000, guid: 2f176f463139efd47a7502720b5be2af, type: 3}
+    compositeShader: {fileID: 4800000, guid: 79d0d5bb3ce28c34686859ee5229f71d, type: 3}
+    volume: {fileID: 0}
+    realisticLook: {fileID: 11400000, guid: d65bbee16ec10ae4db7171d41031eda2, type: 2}
+    stylizedLook: {fileID: 11400000, guid: 36e270965f720bc4b87cc28947ade841, type: 2}
+    downsample: 2
+    fullResolutionNearSmoke: 0
+    adaptiveCrowdResolution: 1
+    crowdResolutionThreshold: 4
+    crowdDownsample: 3
+    crowdNearDistance: 3
+    adaptiveOverlapShading: 1
+    adaptiveCrowdParticles: 1
+    adaptiveCrowdLighting: 1
+    crowdLightingUpdatesPerFrame: 4
+    crowdViewSteps: 128
+    crowdShadowSteps: 24
+    sparseWakeTiles: 1
+    stepCount: 160
+    stepSize: 0.035
+    cacheLighting: 1
+    lightingRefreshRate: 30
+    lightingUpdatesPerFrame: 8
+    lightStepCount: 12
+    lightingGridScale: 1.25
+    lightStepSize: 0.25
+    shadowDensity: 1.15
+    sceneAdditionalLights: 1
+    maxLocalLights: 4
+    localLightStrength: 1
+    localLightSteps: 4
+    receiveSceneShadows: 1
+    castSceneShadows: 1
+    castShadowStrength: 0.58
+    interiorDetail: 0.4
+    noiseErode: 0.22
+    volumeDensity: 3.5
+    absorption: 0.35
+    scattering: 1.2
+    anisotropy: 0
+    ambient: 0.85
+    skyAmbientTint: {r: 1.04, g: 1.04, b: 1.02, a: 1}
+    groundAmbientTint: {r: 0.9, g: 0.87, b: 0.82, a: 1}
+    multipleScattering: 0.25
+    powderStrength: 0.2
+    phaseFunction: 2
+    sunColor: {r: 0.85, g: 0.85, b: 0.82, a: 1}
+    smokeColor: {r: 0.74, g: 0.72, b: 0.68, a: 1}
+    noiseSeed: 0
+    noiseCells: 5
+    noiseOctaves: 5
+    noiseAmplitude: 0.62
+    noiseWarp: 0.35
+    shapeDeformation: 0.34
+    noiseWorldScale: 0.29
+    detailStrength: 0.22
+    lobeContrast: 0.5
+    noiseAdd: 0
+    noiseInvert: 1
+    animationDirection: {x: 0.025, y: -0.11, z: 0.02}
+    animationStrength: 1
+    turbulenceStrength: 0.46
+    turbulenceScale: 1.05
+    turbulenceSpeed: 0.72
+    alphaThreshold: 0.01
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -28,6 +108,7 @@ MonoBehaviour:
   - {fileID: 4735349402826268782}
   - {fileID: 7621850358555596739}
   - {fileID: 6736656509008272620}
+  - {fileID: -4933987908080302132}
   m_RendererFeatureMap: 
   postProcessData: {fileID: 0}
   m_AssetVersion: 3
@@ -123,3 +204,83 @@ MonoBehaviour:
     sampleRadius: 1.25
     depthBias: 0.05
     maxDistance: 350
+--- !u!114 &8664546210367185015
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5233d9d46de00a64480af49f01e1d13e, type: 3}
+  m_Name: GunnellSmokeFeature
+  m_EditorClassIdentifier: Assembly-CSharp::GunnellSmoke.GunnellSmokeFeature
+  m_Active: 1
+  debugForce: 0
+  settings:
+    raymarchCompute: {fileID: 7200000, guid: 2f176f463139efd47a7502720b5be2af, type: 3}
+    compositeShader: {fileID: 4800000, guid: 79d0d5bb3ce28c34686859ee5229f71d, type: 3}
+    volume: {fileID: 0}
+    realisticLook: {fileID: 11400000, guid: d65bbee16ec10ae4db7171d41031eda2, type: 2}
+    stylizedLook: {fileID: 11400000, guid: 36e270965f720bc4b87cc28947ade841, type: 2}
+    downsample: 2
+    fullResolutionNearSmoke: 0
+    adaptiveCrowdResolution: 1
+    crowdResolutionThreshold: 4
+    crowdDownsample: 3
+    crowdNearDistance: 3
+    adaptiveOverlapShading: 1
+    adaptiveCrowdParticles: 1
+    adaptiveCrowdLighting: 1
+    crowdLightingUpdatesPerFrame: 4
+    crowdViewSteps: 128
+    crowdShadowSteps: 24
+    sparseWakeTiles: 1
+    stepCount: 160
+    stepSize: 0.035
+    cacheLighting: 1
+    lightingRefreshRate: 30
+    lightingUpdatesPerFrame: 8
+    lightStepCount: 12
+    lightingGridScale: 1.25
+    lightStepSize: 0.25
+    shadowDensity: 1.15
+    sceneAdditionalLights: 1
+    maxLocalLights: 4
+    localLightStrength: 1
+    localLightSteps: 4
+    receiveSceneShadows: 1
+    castSceneShadows: 1
+    castShadowStrength: 0.58
+    interiorDetail: 0.4
+    noiseErode: 0.22
+    volumeDensity: 3.5
+    absorption: 0.35
+    scattering: 1.2
+    anisotropy: 0
+    ambient: 0.85
+    skyAmbientTint: {r: 1.04, g: 1.04, b: 1.02, a: 1}
+    groundAmbientTint: {r: 0.9, g: 0.87, b: 0.82, a: 1}
+    multipleScattering: 0.25
+    powderStrength: 0.2
+    phaseFunction: 2
+    sunColor: {r: 0.85, g: 0.85, b: 0.82, a: 1}
+    smokeColor: {r: 0.74, g: 0.72, b: 0.68, a: 1}
+    noiseSeed: 0
+    noiseCells: 5
+    noiseOctaves: 5
+    noiseAmplitude: 0.62
+    noiseWarp: 0.35
+    shapeDeformation: 0.34
+    noiseWorldScale: 0.29
+    detailStrength: 0.22
+    lobeContrast: 0.5
+    noiseAdd: 0
+    noiseInvert: 1
+    animationDirection: {x: 0.025, y: -0.11, z: 0.02}
+    animationStrength: 1
+    turbulenceStrength: 0.46
+    turbulenceScale: 1.05
+    turbulenceSpeed: 0.72
+    alphaThreshold: 0.01

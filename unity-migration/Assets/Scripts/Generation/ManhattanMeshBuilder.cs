@@ -39,6 +39,7 @@ namespace Nyc.Generation
         public bool buildSidewalks = true;
         public bool buildBuildings = true;
         public bool buildRoads = true;
+        public bool buildRoadMarkings = true;
         public bool buildParks = true;
         public bool buildProps = true;
         public bool buildLandmarks = true;
@@ -109,6 +110,14 @@ namespace Nyc.Generation
             FlushGround();
             FlushRoads();
             FlushChunks();
+
+            if (buildRoads && buildRoadMarkings)
+            {
+                var rmGo = new GameObject("RoadMarkings");
+                rmGo.transform.SetParent(root, false);
+                var rmb = rmGo.AddComponent<RoadMarkingBuilder>();
+                rmb.Build();
+            }
 
             if (buildLandmarks)
             {
@@ -357,8 +366,7 @@ namespace Nyc.Generation
             if (lot.Width < 6f || lot.Depth < 6f) return;
 
             // Reserve the landmark footprints: they are modelled separately (Phase 3).
-            Vector2 wc = frame.WorldXZ(lot.Center);
-            if (InsideLandmark(wc)) return;
+            if (LotOverlapsLandmark(frame, lot)) return;
 
             bool[] street = inFrame
                 ? new[] { true, true, true, true }
@@ -419,14 +427,16 @@ namespace Nyc.Generation
 
         void EmitRow(BoxFrame frame, RectXZ lot, bool[] street, DistrictProfile p)
         {
+            int style = p.PickRowStyle(ref rng);
+            float storey = DistrictProfile.StoreyFor(style);
             int floors = rng.Range(p.FloorsMin, p.FloorsMax + 1);
-            float h = floors * p.Storey;
+            float h = floors * storey;
             float tone = rng.Range(0.15f, 0.9f);
             float seed = rng.NextFloat();
             bool shops = street[0] || street[1];
-            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), (byte)(seed * 255f), 255);
+            Color32 col = new Color32((byte)(tone * 255f), (byte)(style / 5f * 255f), (byte)(seed * 255f), 255);
 
-            EmitBox(frame, lot, 0f, h, street, shops, tone, p.Style, col, true);
+            EmitBox(frame, lot, 0f, h, street, shops, tone, style, col, true);
             EmitCornice(frame, lot, h, tone);
             if (buildProps) EmitRoofProps(frame, lot, h, tone);
             buildingCount++;
@@ -434,22 +444,24 @@ namespace Nyc.Generation
 
         void EmitTower(BoxFrame frame, RectXZ lot, bool[] street, DistrictProfile p)
         {
+            int style = p.PickTowerStyle(ref rng);
+            float storey = DistrictProfile.StoreyFor(style);
             int floors = rng.Range(p.FloorsMin, p.FloorsMax + 1);
             int towerFloors = rng.Range(p.TowerFloorsMin, p.TowerFloorsMax + 1);
             // buildings.js `slender`: a shaft may not rise more than ~7x its
             // narrow side, preventing needles on small irregular lots.
-            int cap = Mathf.Max(floors + 4, Mathf.FloorToInt(Mathf.Min(lot.Width, lot.Depth) * 7f / p.Storey));
+            int cap = Mathf.Max(floors + 4, Mathf.FloorToInt(Mathf.Min(lot.Width, lot.Depth) * 7f / storey));
             towerFloors = Mathf.Min(towerFloors, cap);
 
-            float totalH = towerFloors * p.Storey;
+            float totalH = towerFloors * storey;
             float tone = rng.Range(0.15f, 0.9f);
             float seed = rng.NextFloat();
             bool shops = street[0] || street[1];
-            Color32 col = new Color32((byte)(tone * 255f), (byte)(p.Style / 5f * 255f), (byte)(seed * 255f), 255);
+            Color32 col = new Color32((byte)(tone * 255f), (byte)(style / 5f * 255f), (byte)(seed * 255f), 255);
 
             // Choose tower typology: 1916 Zoning Deco Wedding Cake, International Style Slab, or Slender Supertall
             float roll = rng.NextFloat();
-            if (p.Style <= 2 || roll < 0.45f)
+            if (style <= 2 || roll < 0.45f)
             {
                 // 1916-zoning "wedding cake": 3 or 4 setback tiers with cornices on every ledge
                 var tiers = new List<RectXZ> { lot };
@@ -468,10 +480,10 @@ namespace Nyc.Generation
                 {
                     bool isLast = i == tiers.Count - 1;
                     float remainingH = totalH - curY;
-                    float tierH = isLast ? remainingH : Mathf.Max(2f * p.Storey, remainingH * (i == 0 ? rng.Range(0.35f, 0.50f) : rng.Range(0.30f, 0.45f)));
+                    float tierH = isLast ? remainingH : Mathf.Max(2f * storey, remainingH * (i == 0 ? rng.Range(0.35f, 0.50f) : rng.Range(0.30f, 0.45f)));
 
                     RectXZ tRect = tiers[i];
-                    EmitBox(frame, tRect, curY, curY + tierH, street, (i == 0) && shops, tone, p.Style, col, true);
+                    EmitBox(frame, tRect, curY, curY + tierH, street, (i == 0) && shops, tone, style, col, true);
                     EmitCornice(frame, tRect, curY + tierH, tone);
 
                     if (isLast && buildProps)
@@ -481,24 +493,24 @@ namespace Nyc.Generation
                     curY += tierH;
                 }
             }
-            else if (p.Style == 5 && lot.Width >= 22f && lot.Depth >= 22f)
+            else if (style == 5 && lot.Width >= 22f && lot.Depth >= 22f)
             {
                 // Billionaires' Row: Slender supertall on podium with mechanical crown
-                float podiumH = rng.Range(3, 6) * p.Storey;
-                EmitBox(frame, lot, 0f, podiumH, street, shops, tone, p.Style, col, true);
+                float podiumH = rng.Range(3, 6) * storey;
+                EmitBox(frame, lot, 0f, podiumH, street, shops, tone, style, col, true);
                 EmitCornice(frame, lot, podiumH, tone);
 
                 RectXZ shaft = lot.Inset(rng.Range(2.2f, 3.8f));
-                float crownH = rng.Range(4, 7) * p.Storey;
+                float crownH = rng.Range(4, 7) * storey;
                 float shaftH = totalH - podiumH - crownH;
 
-                EmitBox(frame, shaft, podiumH, podiumH + shaftH, street, false, tone, p.Style, col, true);
+                EmitBox(frame, shaft, podiumH, podiumH + shaftH, street, false, tone, style, col, true);
                 EmitCornice(frame, shaft, podiumH + shaftH, tone);
 
                 RectXZ crown = shaft.Inset(rng.Range(1.8f, 2.6f));
                 if (crown.Width > 8f && crown.Depth > 8f)
                 {
-                    EmitBox(frame, crown, podiumH + shaftH, totalH, street, false, tone, p.Style, col, true);
+                    EmitBox(frame, crown, podiumH + shaftH, totalH, street, false, tone, style, col, true);
                     EmitCornice(frame, crown, totalH, tone);
                     if (buildProps) EmitRoofProps(frame, crown, totalH, tone);
                 }
@@ -507,14 +519,14 @@ namespace Nyc.Generation
             {
                 // Modern Glass Slab Tower with Plaza / Podium
                 float podium = totalH * rng.Range(0.28f, 0.42f);
-                EmitBox(frame, lot, 0f, podium, street, shops, tone, p.Style, col, true);
+                EmitBox(frame, lot, 0f, podium, street, shops, tone, style, col, true);
                 EmitCornice(frame, lot, podium, tone);
 
                 float inset = rng.Range(2.2f, 4.2f);
                 RectXZ shaft = lot.Inset(inset);
                 if (shaft.Width > 8f && shaft.Depth > 8f)
                 {
-                    EmitBox(frame, shaft, podium, totalH, street, false, tone, p.Style, col, true);
+                    EmitBox(frame, shaft, podium, totalH, street, false, tone, style, col, true);
                     EmitCornice(frame, shaft, totalH, tone);
                     if (buildProps) EmitRoofProps(frame, shaft, totalH, tone);
                 }
@@ -546,7 +558,7 @@ namespace Nyc.Generation
                 {
                     CollisionBoxes.Add(new CollisionBox
                     {
-                        MinX = r.X0, MaxX = r.X1, MinZ = r.Z0, MaxZ = r.Z1, MaxY = y1
+                        MinX = r.X0, MaxX = r.X1, MinZ = r.Z0, MaxZ = r.Z1, MinY = y0, MaxY = y1
                     });
                 }
                 else
@@ -563,7 +575,7 @@ namespace Nyc.Generation
 
                     CollisionBoxes.Add(new CollisionBox
                     {
-                        MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ, MaxY = y1,
+                        MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ, MinY = y0, MaxY = y1,
                         HasObb = true, Cx = ctr.x, Cz = ctr.y,
                         Hx = r.Width * 0.5f, Hz = r.Depth * 0.5f,
                         Cs = f.Cs, Sn = f.Sn
@@ -624,29 +636,363 @@ namespace Nyc.Generation
             // third of the low-rise stock gets a real projecting stone cornice.
             if (y > 45f || rng.NextFloat() > 0.34f) return;
             var c = r.Inset(-0.6f); // 0.6 m overhang
-            EmitSolidBox(f, new RectXZ(c.X0, c.X1, c.Z0, c.Z1), y - 0.9f, y, new Color32(200, 188, 166, 255));
+            // Hang the cornice top 0.22 m below the roof plane
+            // so the roof deck quad and the cornice coping never z-fight when viewed from flight.
+            EmitSolidBox(f, new RectXZ(c.X0, c.X1, c.Z0, c.Z1), y - 0.9f, y - 0.22f, new Color32(200, 188, 166, 255));
+        }
+
+        void AddRoofBoxCollider(BoxFrame f, float x0, float x1, float z0, float z1, float y0, float y1)
+        {
+            float w = Mathf.Abs(x1 - x0);
+            float d = Mathf.Abs(z1 - z0);
+            if (w < 0.15f || d < 0.15f) return;
+
+            if (f.IsIdentity)
+            {
+                CollisionBoxes.Add(new CollisionBox
+                {
+                    MinX = Mathf.Min(x0, x1),
+                    MaxX = Mathf.Max(x0, x1),
+                    MinZ = Mathf.Min(z0, z1),
+                    MaxZ = Mathf.Max(z0, z1),
+                    MinY = y0,
+                    MaxY = y1
+                });
+            }
+            else
+            {
+                Vector2 c0 = f.WorldXZ(new Vector2(x0, z0));
+                Vector2 c1 = f.WorldXZ(new Vector2(x1, z0));
+                Vector2 c2 = f.WorldXZ(new Vector2(x1, z1));
+                Vector2 c3 = f.WorldXZ(new Vector2(x0, z1));
+                float minX = Mathf.Min(Mathf.Min(c0.x, c1.x), Mathf.Min(c2.x, c3.x));
+                float maxX = Mathf.Max(Mathf.Max(c0.x, c1.x), Mathf.Max(c2.x, c3.x));
+                float minZ = Mathf.Min(Mathf.Min(c0.y, c1.y), Mathf.Min(c2.y, c3.y));
+                float maxZ = Mathf.Max(Mathf.Max(c0.y, c1.y), Mathf.Max(c2.y, c3.y));
+                Vector2 ctr = f.WorldXZ(new Vector2((x0 + x1) * 0.5f, (z0 + z1) * 0.5f));
+
+                CollisionBoxes.Add(new CollisionBox
+                {
+                    MinX = minX, MaxX = maxX, MinZ = minZ, MaxZ = maxZ,
+                    MinY = y0, MaxY = y1,
+                    HasObb = true, Cx = ctr.x, Cz = ctr.y,
+                    Hx = w * 0.5f, Hz = d * 0.5f,
+                    Cs = f.Cs, Sn = f.Sn
+                });
+            }
         }
 
         void EmitRoofProps(BoxFrame f, RectXZ r, float y, float tone)
         {
-            // Mechanical bulkhead
-            if (rng.NextFloat() < 0.55f && r.Width > 8f && r.Depth > 8f)
+            // 0. Perimeter parapet wall (frames the roof with authentic coping stone and collision to prevent walking off)
+            if (r.Width > 7.5f && r.Depth > 7.5f && rng.NextFloat() < 0.72f)
             {
-                float w = Mathf.Min(r.Width - 2f, rng.Range(2.8f, 5.5f));
-                float d = Mathf.Min(r.Depth - 2f, rng.Range(2.8f, 5.5f));
-                float x = rng.Range(r.X0 + 1f, r.X1 - 1f - w);
-                float z = rng.Range(r.Z0 + 1f, r.Z1 - 1f - d);
-                EmitSolidBox(f, new RectXZ(x, x + w, z, z + d), y, y + rng.Range(2.4f, 3.4f),
-                             new Color32(124, 130, 138, 255));
+                float pw = 0.38f;
+                float ph = rng.Range(0.75f, 1.15f);
+                Color32 parapetCol = new Color32((byte)(tone * 180f + 50f), (byte)(tone * 170f + 45f), (byte)(tone * 155f + 40f), 255);
+                EmitSolidBox(f, new RectXZ(r.X0, r.X1, r.Z0, r.Z0 + pw), y, y + ph, parapetCol);
+                EmitSolidBox(f, new RectXZ(r.X0, r.X1, r.Z1 - pw, r.Z1), y, y + ph, parapetCol);
+                EmitSolidBox(f, new RectXZ(r.X0, r.X0 + pw, r.Z0 + pw, r.Z1 - pw), y, y + ph, parapetCol);
+                EmitSolidBox(f, new RectXZ(r.X1 - pw, r.X1, r.Z0 + pw, r.Z1 - pw), y, y + ph, parapetCol);
+
+                AddRoofBoxCollider(f, r.X0, r.X1, r.Z0, r.Z0 + pw, y, y + ph);
+                AddRoofBoxCollider(f, r.X0, r.X1, r.Z1 - pw, r.Z1, y, y + ph);
+                AddRoofBoxCollider(f, r.X0, r.X0 + pw, r.Z0 + pw, r.Z1 - pw, y, y + ph);
+                AddRoofBoxCollider(f, r.X1 - pw, r.X1, r.Z0 + pw, r.Z1 - pw, y, y + ph);
             }
 
-            // Cedar water tower
-            if (waterTowers < maxWaterTowers && r.Width > 7f && r.Depth > 7f && y > 18f && rng.NextFloat() < 0.38f)
+            // 1. Mechanical bulkhead / elevator overrun
+            float bhW = 0f, bhD = 0f, bhX = 0f, bhZ = 0f, bhH = 0f;
+            bool hasBulkhead = false;
+            if (rng.NextFloat() < 0.70f && r.Width > 8f && r.Depth > 8f)
             {
-                float cx = rng.Range(r.X0 + 2.2f, r.X1 - 2.2f);
-                float cz = rng.Range(r.Z0 + 2.2f, r.Z1 - 2.2f);
+                bhW = Mathf.Min(r.Width - 2.5f, rng.Range(3.4f, 6.2f));
+                bhD = Mathf.Min(r.Depth - 2.5f, rng.Range(3.4f, 6.2f));
+                bhX = rng.Range(r.X0 + 1.2f, r.X1 - 1.2f - bhW);
+                bhZ = rng.Range(r.Z0 + 1.2f, r.Z1 - 1.2f - bhD);
+                bhH = rng.Range(2.8f, 4.2f);
+                hasBulkhead = true;
+                EmitSolidBox(f, new RectXZ(bhX, bhX + bhW, bhZ, bhZ + bhD), y, y + bhH,
+                             new Color32(118, 124, 132, 255));
+                // Access door hood awning
+                EmitSolidBox(f, new RectXZ(bhX + 0.6f, bhX + 1.8f, bhZ - 0.45f, bhZ), y + 2.1f, y + 2.25f,
+                             new Color32(52, 56, 62, 255));
+
+                AddRoofBoxCollider(f, bhX, bhX + bhW, bhZ, bhZ + bhD, y, y + bhH);
+            }
+
+            // 2. Cedar water towers (supports 1 or 2 clustered tanks on timber/steel grillages)
+            int tankCount = (waterTowers < maxWaterTowers && r.Width > 18f && r.Depth > 18f && y > 18f && rng.NextFloat() < 0.45f) ? 2
+                          : (waterTowers < maxWaterTowers && r.Width > 7.5f && r.Depth > 7.5f && y > 18f && rng.NextFloat() < 0.45f) ? 1 : 0;
+            for (int t = 0; t < tankCount; t++)
+            {
+                float cx = rng.Range(r.X0 + 2.6f, r.X1 - 2.6f);
+                float cz = rng.Range(r.Z0 + 2.6f, r.Z1 - 2.6f);
                 EmitWaterTower(f, cx, cz, y);
                 waterTowers++;
+            }
+
+            // 3. Rooftop HVAC chillers with top exhaust cowl & sheet metal duct runs
+            if (r.Width > 10f && r.Depth > 10f && rng.NextFloat() < 0.68f)
+            {
+                int hvacCount = rng.NextFloat() < 0.50f ? 2 : 1;
+                for (int h = 0; h < hvacCount; h++)
+                {
+                    float hw = rng.Range(2.2f, 3.4f);
+                    float hd = rng.Range(3.2f, 4.8f);
+                    float hx = rng.Range(r.X0 + 1.5f, r.X1 - 1.5f - hw);
+                    float hz = rng.Range(r.Z0 + 1.5f, r.Z1 - 1.5f - hd);
+                    float hy = rng.Range(1.3f, 2.0f);
+
+                    // Galvanized steel casing
+                    EmitSolidBox(f, new RectXZ(hx, hx + hw, hz, hz + hd), y, y + hy,
+                                 new Color32(148, 154, 162, 255));
+                    // Dark top circular exhaust fan cowl
+                    float fanMarginX = hw * 0.18f;
+                    float fanMarginZ = hd * 0.18f;
+                    EmitSolidBox(f, new RectXZ(hx + fanMarginX, hx + hw - fanMarginX, hz + fanMarginZ, hz + hd - fanMarginZ),
+                                 y + hy, y + hy + 0.22f,
+                                 new Color32(36, 40, 46, 255));
+
+                    // Sheet metal air duct connecting chiller to bulkhead
+                    if (hasBulkhead && h == 0 && rng.NextFloat() < 0.65f)
+                    {
+                        float ductMinX = Mathf.Min(hx + hw * 0.5f, bhX + bhW * 0.5f);
+                        float ductMaxX = Mathf.Max(hx + hw * 0.5f, bhX + bhW * 0.5f) + 0.6f;
+                        float ductZ = (hz + hd * 0.5f + bhZ + bhD * 0.5f) * 0.5f;
+                        EmitSolidBox(f, new RectXZ(ductMinX, ductMaxX, ductZ - 0.35f, ductZ + 0.35f), y, y + 0.65f,
+                                     new Color32(132, 138, 145, 255));
+                    }
+
+                    AddRoofBoxCollider(f, hx, hx + hw, hz, hz + hd, y, y + hy + 0.22f);
+                }
+            }
+
+            // 4. Brick chimneys & flue stacks on prewar / low-rise residential roofs
+            if (y < 48f && r.Width > 7f && r.Depth > 7f && rng.NextFloat() < 0.52f)
+            {
+                float cw = 1.35f, cd = 0.95f, ch = rng.Range(1.8f, 2.6f);
+                float cx = r.X0 + 0.9f;
+                float cz = rng.Range(r.Z0 + 1.5f, r.Z1 - 1.5f - cd);
+                // Red/brown clay brick body
+                EmitSolidBox(f, new RectXZ(cx, cx + cw, cz, cz + cd), y, y + ch, new Color32(142, 74, 58, 255));
+                // Stone cap & dual terra cotta flue pots
+                EmitSolidBox(f, new RectXZ(cx - 0.08f, cx + cw + 0.08f, cz - 0.08f, cz + cd + 0.08f), y + ch, y + ch + 0.16f, new Color32(82, 85, 90, 255));
+                EmitSolidBox(f, new RectXZ(cx + 0.18f, cx + cw * 0.5f - 0.08f, cz + 0.22f, cz + cd - 0.22f), y + ch + 0.16f, y + ch + 0.55f, new Color32(185, 95, 65, 255));
+                EmitSolidBox(f, new RectXZ(cx + cw * 0.5f + 0.08f, cx + cw - 0.18f, cz + 0.22f, cz + cd - 0.22f), y + ch + 0.16f, y + ch + 0.55f, new Color32(185, 95, 65, 255));
+
+                AddRoofBoxCollider(f, cx, cx + cw, cz, cz + cd, y, y + ch + 0.55f);
+            }
+
+            // 5. Pitched glass/copper skylights on artists lofts & residential roofs
+            if (y < 68f && r.Width > 9f && r.Depth > 9f && rng.NextFloat() < 0.36f)
+            {
+                float sw = rng.Range(2.4f, 3.8f);
+                float sd = rng.Range(2.8f, 4.4f);
+                float sx = rng.Range(r.X0 + 2f, r.X1 - 2f - sw);
+                float sz = rng.Range(r.Z0 + 2f, r.Z1 - 2f - sd);
+                // Curb base
+                EmitSolidBox(f, new RectXZ(sx, sx + sw, sz, sz + sd), y, y + 0.45f, new Color32(85, 90, 96, 255));
+                // Sloped glass frame
+                EmitSolidBox(f, new RectXZ(sx + 0.16f, sx + sw - 0.16f, sz + 0.16f, sz + sd - 0.16f), y + 0.45f, y + 1.25f, new Color32(58, 118, 142, 255));
+
+                AddRoofBoxCollider(f, sx, sx + sw, sz, sz + sd, y, y + 1.25f);
+            }
+
+            // 6. Rooftop satellite dishes on commercial and mid/high-rise roofs
+            if (y > 32f && r.Width > 9f && r.Depth > 9f && rng.NextFloat() < 0.42f)
+            {
+                float dx = rng.Range(r.X0 + 2f, r.X1 - 2f);
+                float dz = rng.Range(r.Z0 + 2f, r.Z1 - 2f);
+                float dishDiam = rng.Range(1.8f, 2.6f);
+                // Tripod mast
+                EmitSolidBox(f, new RectXZ(dx - 0.14f, dx + 0.14f, dz - 0.14f, dz + 0.14f), y, y + 1.4f, new Color32(78, 82, 88, 255));
+                // Angled reflector dish
+                EmitSolidBox(f, new RectXZ(dx - dishDiam * 0.5f, dx + dishDiam * 0.5f, dz - 0.32f, dz + 0.32f), y + 1.4f, y + 1.4f + dishDiam * 0.82f, new Color32(225, 228, 232, 255));
+                // Center feed horn
+                EmitSolidBox(f, new RectXZ(dx - 0.08f, dx + 0.08f, dz + 0.32f, dz + 0.88f), y + 1.4f + dishDiam * 0.4f, y + 1.4f + dishDiam * 0.4f + 0.14f, new Color32(42, 46, 52, 255));
+
+                AddRoofBoxCollider(f, dx - dishDiam * 0.5f, dx + dishDiam * 0.5f, dz - 0.32f, dz + 0.88f, y, y + 1.4f + dishDiam * 0.82f);
+            }
+
+            // 7. Helipads on high-rise commercial towers (designated landing zones!)
+            if (y > 75f && r.Width >= 18f && r.Depth >= 18f && rng.NextFloat() < 0.28f)
+            {
+                float padSize = Mathf.Min(Mathf.Min(r.Width - 3.2f, r.Depth - 3.2f), 15f);
+                float hx = (r.X0 + r.X1) * 0.5f;
+                float hz = (r.Z0 + r.Z1) * 0.5f;
+                float half = padSize * 0.5f;
+
+                // Elevated landing deck (with collision support)
+                EmitSolidBox(f, new RectXZ(hx - half, hx + half, hz - half, hz + half), y, y + 0.35f, new Color32(66, 70, 76, 255));
+
+                // High-visibility yellow safety border
+                float borderW = 0.52f;
+                Color32 yellowB = new Color32(245, 198, 24, 255);
+                EmitSolidBox(f, new RectXZ(hx - half, hx + half, hz - half, hz - half + borderW), y + 0.35f, y + 0.38f, yellowB);
+                EmitSolidBox(f, new RectXZ(hx - half, hx + half, hz + half - borderW, hz + half), y + 0.35f, y + 0.38f, yellowB);
+                EmitSolidBox(f, new RectXZ(hx - half, hx - half + borderW, hz - half + borderW, hz + half - borderW), y + 0.35f, y + 0.38f, yellowB);
+                EmitSolidBox(f, new RectXZ(hx + half - borderW, hx + half, hz - half + borderW, hz + half - borderW), y + 0.35f, y + 0.38f, yellowB);
+
+                // White "H" Landing Marking
+                float hBarH = padSize * 0.45f;
+                float hBarW = 0.62f;
+                float hSpan = padSize * 0.22f;
+                Color32 whiteH = new Color32(242, 244, 248, 255);
+                EmitSolidBox(f, new RectXZ(hx - hSpan - hBarW * 0.5f, hx - hSpan + hBarW * 0.5f, hz - hBarH * 0.5f, hz + hBarH * 0.5f), y + 0.38f, y + 0.40f, whiteH);
+                EmitSolidBox(f, new RectXZ(hx + hSpan - hBarW * 0.5f, hx + hSpan + hBarW * 0.5f, hz - hBarH * 0.5f, hz + hBarH * 0.5f), y + 0.38f, y + 0.40f, whiteH);
+                EmitSolidBox(f, new RectXZ(hx - hSpan, hx + hSpan, hz - hBarW * 0.5f, hz + hBarW * 0.5f), y + 0.38f, y + 0.40f, whiteH);
+
+                AddRoofBoxCollider(f, hx - half, hx + half, hz - half, hz + half, y, y + 0.40f);
+            }
+
+            // 8. Rooftop communications antenna mast (on towers and high roofs)
+            if (y > 52f && r.Width > 8f && r.Depth > 8f && rng.NextFloat() < 0.48f)
+            {
+                float ax = (r.X0 + r.X1) * 0.5f + rng.Range(-2f, 2f);
+                float az = (r.Z0 + r.Z1) * 0.5f + rng.Range(-2f, 2f);
+                float mastH = rng.Range(8f, 16f);
+                // Slender antenna mast
+                EmitSolidBox(f, new RectXZ(ax - 0.12f, ax + 0.12f, az - 0.12f, az + 0.12f), y, y + mastH,
+                             new Color32(72, 78, 86, 255));
+                // Crossbar tines
+                EmitSolidBox(f, new RectXZ(ax - 0.75f, ax + 0.75f, az - 0.06f, az + 0.06f), y + mastH * 0.72f, y + mastH * 0.72f + 0.12f,
+                             new Color32(64, 70, 78, 255));
+                EmitSolidBox(f, new RectXZ(ax - 0.5f, ax + 0.5f, az - 0.06f, az + 0.06f), y + mastH * 0.88f, y + mastH * 0.88f + 0.12f,
+                             new Color32(64, 70, 78, 255));
+
+                // FAA Red Aviation Hazard Warning Beacon on mast peak
+                Color32 beaconRed = new Color32(255, 36, 36, 255);
+                EmitSolidBox(f, new RectXZ(ax - 0.22f, ax + 0.22f, az - 0.22f, az + 0.22f), y + mastH, y + mastH + 0.55f, beaconRed);
+
+                AddRoofBoxCollider(f, ax - 0.45f, ax + 0.45f, az - 0.45f, az + 0.45f, y, y + mastH + 0.55f);
+            }
+
+            // 9. FAA Obstacle hazard lights on corners of high-rise skyscrapers (>90m)
+            if (y > 90f && r.Width > 14f && r.Depth > 14f)
+            {
+                Color32 beaconRed = new Color32(255, 36, 36, 255);
+                float px0 = r.X0 + 0.40f, px1 = r.X1 - 0.40f;
+                float pz0 = r.Z0 + 0.40f, pz1 = r.Z1 - 0.40f;
+                float by0 = y + 0.95f;
+                float bh = 0.55f;
+                EmitSolidBox(f, new RectXZ(px0 - 0.16f, px0 + 0.16f, pz0 - 0.16f, pz0 + 0.16f), by0, by0 + bh, beaconRed);
+                EmitSolidBox(f, new RectXZ(px1 - 0.16f, px1 + 0.16f, pz0 - 0.16f, pz0 + 0.16f), by0, by0 + bh, beaconRed);
+                EmitSolidBox(f, new RectXZ(px0 - 0.16f, px0 + 0.16f, pz1 - 0.16f, pz1 + 0.16f), by0, by0 + bh, beaconRed);
+                EmitSolidBox(f, new RectXZ(px1 - 0.16f, px1 + 0.16f, pz1 - 0.16f, pz1 + 0.16f), by0, by0 + bh, beaconRed);
+            }
+
+            // 10. Industrial galvanized wind turbine ventilators (whirlybirds / exhaust cowls)
+            if (r.Width > 7.5f && r.Depth > 7.5f && rng.NextFloat() < 0.44f)
+            {
+                int cowlCount = rng.NextFloat() < 0.50f ? 2 : 1;
+                for (int c = 0; c < cowlCount; c++)
+                {
+                    float cx = rng.Range(r.X0 + 1.2f, r.X1 - 1.2f);
+                    float cz = rng.Range(r.Z0 + 1.2f, r.Z1 - 1.2f);
+                    // Square curb base
+                    EmitSolidBox(f, new RectXZ(cx - 0.35f, cx + 0.35f, cz - 0.35f, cz + 0.35f), y, y + 0.30f,
+                                 new Color32(115, 120, 128, 255));
+                    // Cylindrical spinning cowl head
+                    EmitSolidBox(f, new RectXZ(cx - 0.26f, cx + 0.26f, cz - 0.26f, cz + 0.26f), y + 0.30f, y + 0.72f,
+                                 new Color32(178, 184, 192, 255));
+                    AddRoofBoxCollider(f, cx - 0.35f, cx + 0.35f, cz - 0.35f, cz + 0.35f, y, y + 0.72f);
+                }
+            }
+
+            // 11. Maintenance scuttle access hatch (raised metal hatch with sloping cover)
+            if (r.Width > 8f && r.Depth > 8f && !hasBulkhead && rng.NextFloat() < 0.65f)
+            {
+                float hx = rng.Range(r.X0 + 1.5f, r.X1 - 2.8f);
+                float hz = rng.Range(r.Z0 + 1.5f, r.Z1 - 2.8f);
+                // Hatch raised curb
+                EmitSolidBox(f, new RectXZ(hx, hx + 1.25f, hz, hz + 1.45f), y, y + 0.40f,
+                             new Color32(85, 90, 96, 255));
+                // Hatch steel door (sloped lid)
+                Color32 hatchLid = rng.NextFloat() < 0.5f ? new Color32(125, 62, 54, 255) : new Color32(58, 62, 68, 255);
+                EmitSolidBox(f, new RectXZ(hx - 0.05f, hx + 1.30f, hz - 0.05f, hz + 1.50f), y + 0.40f, y + 0.52f, hatchLid);
+                AddRoofBoxCollider(f, hx - 0.05f, hx + 1.30f, hz - 0.05f, hz + 1.50f, y, y + 0.52f);
+            }
+
+            // 12. Residential rooftop terrace / cedar deck & pergola (on lofts and prewar roofs)
+            if (y >= 14f && y <= 55f && r.Width >= 14f && r.Depth >= 14f && rng.NextFloat() < 0.32f)
+            {
+                float deckW = Mathf.Min(r.Width - 3f, rng.Range(5.5f, 7.5f));
+                float deckD = Mathf.Min(r.Depth - 3f, rng.Range(5.5f, 7.5f));
+                float dx0 = rng.Range(r.X0 + 1.5f, r.X1 - 1.5f - deckW);
+                float dz0 = rng.Range(r.Z0 + 1.5f, r.Z1 - 1.5f - deckD);
+
+                // Cedar wood plank decking platform (raised 0.14m)
+                Color32 teakWood = new Color32(168, 122, 82, 255);
+                EmitSolidBox(f, new RectXZ(dx0, dx0 + deckW, dz0, dz0 + deckD), y, y + 0.14f, teakWood);
+
+                // Perimeter timber planters with evergreen hedges
+                Color32 planterBox = new Color32(95, 70, 52, 255);
+                Color32 hedgeGreen = new Color32(42, 78, 36, 255);
+                // Planter north
+                EmitSolidBox(f, new RectXZ(dx0, dx0 + deckW, dz0, dz0 + 0.45f), y + 0.14f, y + 0.55f, planterBox);
+                EmitSolidBox(f, new RectXZ(dx0 + 0.05f, dx0 + deckW - 0.05f, dz0 + 0.05f, dz0 + 0.40f), y + 0.55f, y + 1.15f, hedgeGreen);
+                // Planter south
+                EmitSolidBox(f, new RectXZ(dx0, dx0 + deckW, dz0 + deckD - 0.45f, dz0 + deckD), y + 0.14f, y + 0.55f, planterBox);
+                EmitSolidBox(f, new RectXZ(dx0 + 0.05f, dx0 + deckW - 0.05f, dz0 + deckD - 0.40f, dz0 + deckD - 0.05f), y + 0.55f, y + 1.15f, hedgeGreen);
+
+                // Slatted timber pergola canopy (4 corner columns + rafters)
+                Color32 pergolaBeam = new Color32(138, 96, 64, 255);
+                float colH = 2.4f;
+                float colW = 0.16f;
+                EmitSolidBox(f, new RectXZ(dx0, dx0 + colW, dz0, dz0 + colW), y + 0.14f, y + 0.14f + colH, pergolaBeam);
+                EmitSolidBox(f, new RectXZ(dx0 + deckW - colW, dx0 + deckW, dz0, dz0 + colW), y + 0.14f, y + 0.14f + colH, pergolaBeam);
+                EmitSolidBox(f, new RectXZ(dx0, dx0 + colW, dz0 + deckD - colW, dz0 + deckD), y + 0.14f, y + 0.14f + colH, pergolaBeam);
+                EmitSolidBox(f, new RectXZ(dx0 + deckW - colW, dx0 + deckW, dz0 + deckD - colW, dz0 + deckD), y + 0.14f, y + 0.14f + colH, pergolaBeam);
+
+                // Overhead pergola rafters
+                float rafterY = y + 0.14f + colH;
+                for (float rz = dz0; rz <= dz0 + deckD; rz += 1.1f)
+                {
+                    EmitSolidBox(f, new RectXZ(dx0 - 0.2f, dx0 + deckW + 0.2f, rz, rz + 0.12f), rafterY, rafterY + 0.16f, pergolaBeam);
+                }
+
+                AddRoofBoxCollider(f, dx0, dx0 + deckW, dz0, dz0 + deckD, y, y + 0.14f);
+                AddRoofBoxCollider(f, dx0, dx0 + deckW, dz0, dz0 + 0.45f, y + 0.14f, y + 1.15f);
+                AddRoofBoxCollider(f, dx0, dx0 + deckW, dz0 + deckD - 0.45f, dz0 + deckD, y + 0.14f, y + 1.15f);
+            }
+
+            // 13. Building Maintenance Unit (BMU / Window-washing rig crane) on high-rise towers
+            if (y > 72f && r.Width >= 15f && r.Depth >= 15f && rng.NextFloat() < 0.42f)
+            {
+                float bmuX = (r.X0 + r.X1) * 0.5f + rng.Range(-2f, 2f);
+                float bmuZ = (r.Z0 + r.Z1) * 0.5f + rng.Range(-2f, 2f);
+                // Heavy concrete & steel tracked trolley chassis
+                EmitSolidBox(f, new RectXZ(bmuX - 1.2f, bmuX + 1.2f, bmuZ - 1.0f, bmuZ + 1.0f), y, y + 0.85f,
+                             new Color32(72, 76, 82, 255));
+                // Machinery turret
+                EmitSolidBox(f, new RectXZ(bmuX - 0.75f, bmuX + 0.75f, bmuZ - 0.75f, bmuZ + 0.75f), y + 0.85f, y + 1.65f,
+                             new Color32(56, 60, 66, 255));
+                // Articulated crane boom arm in safety yellow/orange
+                Color32 safetyYellow = new Color32(236, 168, 24, 255);
+                float armLength = rng.Range(4.2f, 6.5f);
+                EmitSolidBox(f, new RectXZ(bmuX - 0.18f, bmuX + 0.18f, bmuZ, bmuZ + armLength), y + 1.65f, y + 2.05f, safetyYellow);
+                // Counterweight block
+                EmitSolidBox(f, new RectXZ(bmuX - 0.55f, bmuX + 0.55f, bmuZ - 1.4f, bmuZ - 0.6f), y + 1.0f, y + 1.75f,
+                             new Color32(40, 42, 46, 255));
+
+                AddRoofBoxCollider(f, bmuX - 1.2f, bmuX + 1.2f, bmuZ - 1.4f, bmuZ + armLength, y, y + 2.05f);
+            }
+
+            // 14. Cellular sector antenna mounts (NYC 5G/LTE rooftop tripods)
+            if (y > 22f && r.Width > 9f && r.Depth > 9f && rng.NextFloat() < 0.38f)
+            {
+                float antX = rng.NextFloat() < 0.5f ? r.X0 + 0.75f : r.X1 - 0.75f;
+                float antZ = rng.NextFloat() < 0.5f ? r.Z0 + 0.75f : r.Z1 - 0.75f;
+                // Galvanized mast pipe
+                EmitSolidBox(f, new RectXZ(antX - 0.06f, antX + 0.06f, antZ - 0.06f, antZ + 0.06f), y, y + 2.2f,
+                             new Color32(130, 136, 144, 255));
+                // Cellular antenna panels (white rectangular sector radiators)
+                Color32 panelWhite = new Color32(232, 236, 240, 255);
+                EmitSolidBox(f, new RectXZ(antX - 0.16f, antX + 0.16f, antZ - 0.10f, antZ + 0.10f), y + 0.9f, y + 2.1f, panelWhite);
+                EmitSolidBox(f, new RectXZ(antX + 0.12f, antX + 0.28f, antZ - 0.08f, antZ + 0.08f), y + 1.0f, y + 2.0f, panelWhite);
+
+                AddRoofBoxCollider(f, antX - 0.25f, antX + 0.35f, antZ - 0.25f, antZ + 0.25f, y, y + 2.2f);
             }
         }
 
@@ -657,6 +1003,8 @@ namespace Nyc.Generation
             const float rad = 1.7f;
             float y0 = y + 2.6f, y1 = y0 + 3.6f;
             Color32 wood = new Color32(126, 90, 62, 255);
+
+            AddRoofBoxCollider(f, cx - rad * 1.15f, cx + rad * 1.15f, cz - rad * 1.15f, cz + rad * 1.15f, y, y1 + 1.5f);
 
             for (int i = 0; i < sides; i++)
             {
@@ -705,6 +1053,16 @@ namespace Nyc.Generation
                 float lz = cz + Mathf.Sin(a) * 1.15f;
                 EmitSolidBox(f, new RectXZ(lx - 0.12f, lx + 0.12f, lz - 0.12f, lz + 0.12f), y, y0,
                              new Color32(40, 44, 48, 255));
+            }
+
+            // Steel access ladder on side of water tower
+            float ladX = cx, ladZ = cz + rad + 0.08f;
+            Color32 ladderColor = new Color32(45, 49, 54, 255);
+            EmitSolidBox(f, new RectXZ(ladX - 0.22f, ladX - 0.16f, ladZ - 0.03f, ladZ + 0.03f), y, y1 + 0.4f, ladderColor);
+            EmitSolidBox(f, new RectXZ(ladX + 0.16f, ladX + 0.22f, ladZ - 0.03f, ladZ + 0.03f), y, y1 + 0.4f, ladderColor);
+            for (float ry = y + 0.5f; ry <= y1 + 0.3f; ry += 0.50f)
+            {
+                EmitSolidBox(f, new RectXZ(ladX - 0.18f, ladX + 0.18f, ladZ - 0.02f, ladZ + 0.02f), ry, ry + 0.04f, ladderColor);
             }
         }
 
@@ -759,18 +1117,30 @@ namespace Nyc.Generation
             foreach (var kv in geo.Landmarks)
             {
                 LandmarkRec l = kv.Value;
-                if (l.H < 40f || l.W < 8f || l.D < 8f) continue;
+                if (l.W < 8f || l.D < 8f) continue;
                 list.Add(new RectXZ(l.X - l.W * 0.5f - 3f, l.X + l.W * 0.5f + 3f,
                                     l.Z - l.D * 0.5f - 3f, l.Z + l.D * 0.5f + 3f));
             }
             return list.ToArray();
         }
 
-        bool InsideLandmark(Vector2 world)
+        bool LotOverlapsLandmark(BoxFrame frame, RectXZ lot)
         {
+            Vector2 c0 = frame.WorldXZ(new Vector2(lot.X0, lot.Z0));
+            Vector2 c1 = frame.WorldXZ(new Vector2(lot.X1, lot.Z0));
+            Vector2 c2 = frame.WorldXZ(new Vector2(lot.X1, lot.Z1));
+            Vector2 c3 = frame.WorldXZ(new Vector2(lot.X0, lot.Z1));
+            float minX = Mathf.Min(Mathf.Min(c0.x, c1.x), Mathf.Min(c2.x, c3.x));
+            float maxX = Mathf.Max(Mathf.Max(c0.x, c1.x), Mathf.Max(c2.x, c3.x));
+            float minZ = Mathf.Min(Mathf.Min(c0.y, c1.y), Mathf.Min(c2.y, c3.y));
+            float maxZ = Mathf.Max(Mathf.Max(c0.y, c1.y), Mathf.Max(c2.y, c3.y));
+
             for (int i = 0; i < landmarkReserves.Length; i++)
-                if (world.x > landmarkReserves[i].X0 && world.x < landmarkReserves[i].X1 &&
-                    world.y > landmarkReserves[i].Z0 && world.y < landmarkReserves[i].Z1) return true;
+            {
+                RectXZ res = landmarkReserves[i];
+                if (maxX > res.X0 && minX < res.X1 && maxZ > res.Z0 && minZ < res.Z1)
+                    return true;
+            }
             return false;
         }
 
@@ -996,53 +1366,74 @@ namespace Nyc.Generation
         {
             public int FloorsMin, FloorsMax;         // street-wall / fill height
             public int TowerFloorsMin, TowerFloorsMax;
-            public float TowerChance, Storey;
-            public int Style;
+            public float TowerChance;
+            public int[] RowStyles;
+            public int[] TowerStyles;
+
+            public static float StoreyFor(int style)
+            {
+                switch (style)
+                {
+                    case 0: return 3.7f;
+                    case 1: return 3.5f;
+                    case 2: return 3.4f;
+                    case 3: return 3.9f;
+                    case 4: return 3.8f;
+                    case 5: return 4.1f;
+                    default: return 3.7f;
+                }
+            }
+
+            public int PickRowStyle(ref Mulberry32 rng) =>
+                RowStyles != null && RowStyles.Length > 0 ? RowStyles[rng.Range(0, RowStyles.Length - 1)] : 0;
+
+            public int PickTowerStyle(ref Mulberry32 rng) =>
+                TowerStyles != null && TowerStyles.Length > 0 ? TowerStyles[rng.Range(0, TowerStyles.Length - 1)] : 3;
 
             public static DistrictProfile For(string district)
             {
                 switch (district)
                 {
-                    case "midtown":            return P(8, 16, 24, 44, 0.38f, 3.9f, 3);
-                    case "garment":            return P(8, 14, 16, 28, 0.25f, 3.8f, 1);
-                    case "hudson_yards":       return P(10, 18, 34, 54, 0.45f, 4.0f, 5);
-                    case "billionaires_row":   return P(10, 22, 40, 72, 0.50f, 4.1f, 5);
-                    case "fidi":               return P(9, 18, 22, 46, 0.40f, 3.9f, 4);
-                    case "civic_center":       return P(8, 16, 18, 30, 0.25f, 3.8f, 0);
-                    case "battery_park_city":  return P(8, 16, 18, 38, 0.30f, 3.9f, 3);
-                    case "hells_kitchen":      return P(6, 12, 16, 26, 0.18f, 3.6f, 2);
-                    case "murray_hill":        return P(8, 14, 18, 30, 0.20f, 3.7f, 0);
-                    case "turtle_bay":         return P(8, 14, 18, 30, 0.25f, 3.8f, 0);
+                    case "midtown":            return P(8, 16, 24, 44, 0.38f, new[] { 0, 1, 3, 4 }, new[] { 3, 4, 5, 0 });
+                    case "garment":            return P(8, 14, 16, 28, 0.25f, new[] { 1, 0, 2 },    new[] { 1, 0, 4 });
+                    case "hudson_yards":       return P(10, 18, 34, 54, 0.45f, new[] { 3, 5, 1 },    new[] { 5, 3 });
+                    case "billionaires_row":   return P(10, 22, 40, 72, 0.50f, new[] { 0, 1, 3 },    new[] { 5, 0, 3 });
+                    case "fidi":               return P(9, 18, 22, 46, 0.40f, new[] { 0, 1, 4 },    new[] { 4, 3, 0, 5 });
+                    case "civic_center":       return P(8, 16, 18, 30, 0.25f, new[] { 0, 1 },       new[] { 0, 4 });
+                    case "battery_park_city":  return P(8, 16, 18, 38, 0.30f, new[] { 1, 0, 3 },    new[] { 3, 1, 0 });
+                    case "hells_kitchen":      return P(6, 12, 16, 26, 0.18f, new[] { 2, 1, 0 },    new[] { 2, 1, 3 });
+                    case "murray_hill":
+                    case "turtle_bay":         return P(8, 14, 18, 30, 0.22f, new[] { 0, 2, 1 },    new[] { 0, 3 });
                     case "uws":
-                    case "ues":                return P(8, 14, 16, 26, 0.12f, 3.7f, 0);
+                    case "ues":                return P(8, 14, 16, 26, 0.12f, new[] { 0, 2, 1 },    new[] { 0, 1, 3 });
                     case "harlem":
                     case "east_harlem":
-                    case "morningside":        return P(4, 9, 12, 18, 0.05f, 3.5f, 2);
+                    case "morningside":        return P(4, 9, 12, 18, 0.05f, new[] { 2, 1 },       new[] { 2, 1 });
                     case "village":
                     case "west_village":
-                    case "east_village":       return P(5, 10, 12, 20, 0.06f, 3.5f, 2);
+                    case "east_village":       return P(5, 10, 12, 20, 0.06f, new[] { 2, 1 },       new[] { 2, 1 });
                     case "soho":
                     case "tribeca":
-                    case "hudson_square":      return P(5, 8, 10, 16, 0.04f, 3.7f, 1);
+                    case "hudson_square":      return P(5, 8, 10, 16, 0.04f, new[] { 1, 0 },       new[] { 1, 0 });
                     case "chelsea":
-                    case "west_chelsea":       return P(6, 12, 14, 24, 0.12f, 3.7f, 1);
+                    case "west_chelsea":       return P(6, 12, 14, 24, 0.12f, new[] { 1, 2, 0 },    new[] { 1, 3 });
                     case "flatiron":
-                    case "nomad":              return P(8, 14, 16, 28, 0.20f, 3.8f, 1);
-                    case "gramercy":           return P(7, 13, 14, 24, 0.12f, 3.7f, 2);
+                    case "nomad":              return P(8, 14, 16, 28, 0.20f, new[] { 1, 0 },       new[] { 1, 0, 3 });
+                    case "gramercy":           return P(7, 13, 14, 24, 0.12f, new[] { 2, 0, 1 },    new[] { 0, 2 });
                     case "little_italy":
                     case "chinatown":
-                    case "lower_east_side":    return P(5, 10, 12, 20, 0.05f, 3.5f, 2);
-                    case "stuy_town":          return P(12, 14, 14, 16, 0.02f, 3.4f, 1);
-                    default:                   return P(8, 16, 20, 36, 0.30f, 3.8f, 3);
+                    case "lower_east_side":    return P(5, 10, 12, 20, 0.05f, new[] { 2, 1 },       new[] { 1, 2 });
+                    case "stuy_town":          return P(12, 14, 14, 16, 0.02f, new[] { 1 },          new[] { 1 });
+                    default:                   return P(8, 16, 20, 36, 0.30f, new[] { 0, 1, 3 },    new[] { 3, 4, 0 });
                 }
             }
 
-            static DistrictProfile P(int a, int b, int ta, int tb, float t, float s, int style) =>
+            static DistrictProfile P(int a, int b, int ta, int tb, float t, int[] rows, int[] towers) =>
                 new DistrictProfile
                 {
                     FloorsMin = a, FloorsMax = b,
                     TowerFloorsMin = ta, TowerFloorsMax = tb,
-                    TowerChance = t, Storey = s, Style = style
+                    TowerChance = t, RowStyles = rows, TowerStyles = towers
                 };
         }
 

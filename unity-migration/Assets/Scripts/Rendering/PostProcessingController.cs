@@ -94,6 +94,8 @@ namespace Nyc.Rendering
     [RequireComponent(typeof(Volume))]
     public sealed class PostProcessingController : MonoBehaviour
     {
+        public static PostProcessingController Instance { get; private set; }
+
         [Header("Volume Reference")]
         public Volume volume;
 
@@ -111,7 +113,16 @@ namespace Nyc.Rendering
         bool _initialized;
         float _lastHour = float.NaN;
 
-        void Awake() => EnsureInit();
+        void Awake()
+        {
+            Instance = this;
+            EnsureInit();
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
 
         void OnEnable()
         {
@@ -244,37 +255,31 @@ namespace Nyc.Rendering
             EnsureInit();
 
             // 1. ACES Tonemapping
+            // Matching post-processing.js: RenderPipeline performs ACES tone mapping once at the end
             if (_tonemapping != null)
             {
                 _tonemapping.mode.Override(TonemappingMode.ACES);
             }
 
-            // 2. Color Adjustments
+            // 2. Color adjustments, bloom, and vignette are handled exclusively by NycBloomFeature
+            // (DualThresholdBloom.shader), which implements post-processing.js's exact peak-limited
+            // dual-threshold bloom and contrast pivot. Zero out the Volume overrides to prevent double grading.
             if (_colorAdjustments != null)
             {
-                // In post-processing.js: exposure is applied before tone mapping.
-                // URP postExposure is in EV (log2):
-                _colorAdjustments.postExposure.Override(Mathf.Log(Mathf.Max(0.01f, look.exposure), 2f));
-                _colorAdjustments.contrast.Override((look.contrast - 1f) * 100f);
-                _colorAdjustments.saturation.Override((look.saturation - 1f) * 100f);
-                _colorAdjustments.colorFilter.Override(look.balance);
+                _colorAdjustments.postExposure.Override(0f);
+                _colorAdjustments.contrast.Override(0f);
+                _colorAdjustments.saturation.Override(0f);
+                _colorAdjustments.colorFilter.Override(Color.white);
             }
 
-            // 3. Bloom
             if (_bloom != null)
             {
-                _bloom.intensity.Override(look.bloom);
-                _bloom.threshold.Override(look.bloomThreshold);
-                _bloom.scatter.Override(0.40f);
-                _bloom.tint.Override(Color.white);
+                _bloom.intensity.Override(0f);
             }
 
-            // 4. Subtle Lens Vignette
             if (_vignette != null)
             {
-                _vignette.intensity.Override(vignetteIntensity);
-                _vignette.smoothness.Override(vignetteSmoothness);
-                _vignette.rounded.Override(false);
+                _vignette.intensity.Override(0f);
             }
         }
     }

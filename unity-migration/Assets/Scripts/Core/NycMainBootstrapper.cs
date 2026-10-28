@@ -28,7 +28,7 @@ namespace Nyc.Core
         [Header("Configuration")]
         public bool autoStartOnAwake = true;
         public TravelMode initialTravelMode = TravelMode.Car;
-        public float startHour = 17.75f; // Golden hour (matching web version)
+        public float startHour = 13.5f; // Sunny Midday (13:30)
 
         [Header("Core Systems")]
         public LightingSystem lightingSystem;
@@ -58,6 +58,7 @@ namespace Nyc.Core
 
         public static NycMainBootstrapper Instance { get; private set; }
         public bool IsInitialized { get; private set; }
+        bool _isBooting;
 
         public event Action OnCityReady;
 
@@ -65,6 +66,14 @@ namespace Nyc.Core
         {
             Instance = this;
             if (autoStartOnAwake)
+            {
+                StartCoroutine(BootSequence());
+            }
+        }
+
+        void OnEnable()
+        {
+            if (Application.isPlaying && !IsInitialized && !_isBooting && autoStartOnAwake)
             {
                 StartCoroutine(BootSequence());
             }
@@ -80,7 +89,8 @@ namespace Nyc.Core
         /// </summary>
         public IEnumerator BootSequence()
         {
-            if (IsInitialized) yield break;
+            if (IsInitialized || _isBooting) yield break;
+            _isBooting = true;
 
             Debug.Log("[NYC Bootstrapper] Starting NYC World Initialization Sequence...");
 
@@ -117,6 +127,7 @@ namespace Nyc.Core
             InitUIAndMinimap();
 
             IsInitialized = true;
+            _isBooting = false;
             Debug.Log("[NYC Bootstrapper] NYC World Bootstrapping Complete. Ready for Play!");
             OnCityReady?.Invoke();
         }
@@ -126,7 +137,8 @@ namespace Nyc.Core
             if (data != null)
             {
                 CityConfig.Initialize(data);
-                Debug.Log($"[NYC Bootstrapper] GeoData loaded: {data.Blocks?.Count ?? 0} blocks, {data.Roads?.Count ?? 0} roads, {data.Streets?.Count ?? 0} streets.");
+                if (!CitySpatialIndex.Ready) CitySpatialIndex.Build(data);
+                Debug.Log($"[NYC Bootstrapper] GeoData loaded: {data.Blocks?.Count ?? 0} blocks, {data.Roads?.Count ?? 0} roads, {data.Streets?.Count ?? 0} streets. SpatialIndex Ready: {CitySpatialIndex.Ready}");
             }
         }
 
@@ -137,6 +149,8 @@ namespace Nyc.Core
 
             if (lightingSystem)
             {
+                lightingSystem.SetCycleRunning(false);
+                lightingSystem.ApplyPreset("midday");
                 lightingSystem.SetHour(startHour);
             }
 
@@ -155,9 +169,16 @@ namespace Nyc.Core
             if (!treeSystem) treeSystem = FindAnyObjectByType<TreeSystem>();
             if (!streetDetailsSystem) streetDetailsSystem = FindAnyObjectByType<StreetDetailsSystem>();
 
-            if (cityMeshBuilder) cityMeshBuilder.Build();
-            if (landmarkBuilder) landmarkBuilder.Build();
-            if (boroughsBuilder) boroughsBuilder.Build();
+            if (cityMeshBuilder)
+            {
+                cityMeshBuilder.Build();
+            }
+            else
+            {
+                if (landmarkBuilder) landmarkBuilder.Build();
+                if (boroughsBuilder) boroughsBuilder.Build();
+            }
+
             if (treeSystem && CityConfig.Geo != null) treeSystem.Initialize(CityConfig.Geo);
             if (streetDetailsSystem && CityConfig.Geo != null) streetDetailsSystem.Initialize(CityConfig.Geo);
         }
@@ -170,17 +191,24 @@ namespace Nyc.Core
             {
                 var boxes = new List<CollisionBox>();
 
-                if (cityMeshBuilder != null) boxes.AddRange(cityMeshBuilder.CollisionBoxes);
+                if (cityMeshBuilder != null)
+                {
+                    boxes.AddRange(cityMeshBuilder.CollisionBoxes);
+                }
                 if (landmarkBuilder != null) boxes.AddRange(landmarkBuilder.CollisionBoxes);
                 if (boroughsBuilder != null) boxes.AddRange(boroughsBuilder.CollisionBoxes);
 
                 collisionWorld.Build(boxes);
+                Debug.Log($"[Collision] CollisionWorld initialized with {collisionWorld.Count} boxes.");
 
                 if (CityConfig.Ready && CityConfig.Geo?.Manhattan != null)
                 {
                     collisionWorld.SetIslandBounds(CityConfig.ManhattanBounds);
                 }
             }
+
+            if (controllerManager && collisionWorld)
+                controllerManager.collision = collisionWorld;
         }
 
         void InitTrafficAndPedestrians()
@@ -200,6 +228,9 @@ namespace Nyc.Core
 
             if (trafficSystem)
                 trafficSystem.pedestrianCrowd = pedestrianCrowd;
+
+            if (controllerManager && trafficSystem)
+                controllerManager.trafficSystem = trafficSystem;
 
             if (trafficSystem)
             {
@@ -235,6 +266,13 @@ namespace Nyc.Core
             {
                 cameraManager.controllers = controllerManager;
             }
+
+            // Keep the playable scene valid for runtime and trailer captures. Some imported
+            // camera revisions lost their AudioListener, which made every Play/capture emit a
+            // warning and left the drone shots silent.
+            Camera activeCamera = cameraManager != null ? cameraManager.cam : Camera.main;
+            if (activeCamera != null && FindAnyObjectByType<AudioListener>() == null)
+                activeCamera.gameObject.AddComponent<AudioListener>();
         }
 
         void InitSceneCulling()
@@ -275,7 +313,20 @@ namespace Nyc.Core
 
         void Update()
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized)
+            {
+                if (Application.isPlaying && !_isBooting && autoStartOnAwake)
+                {
+                    StartCoroutine(BootSequence());
+                }
+                return;
+            }
+
+            // Auto-heal collision world if a hot Domain Reload cleared non-serialized boxes in Play Mode
+            if (collisionWorld != null && collisionWorld.Count == 0 && cityMeshBuilder != null && cityMeshBuilder.CollisionBoxes != null && cityMeshBuilder.CollisionBoxes.Count > 0)
+            {
+                InitCollisionAndSpatialIndex();
+            }
 
             // Day / night cycle progression
             if (lightingSystem != null && postProcessing != null)

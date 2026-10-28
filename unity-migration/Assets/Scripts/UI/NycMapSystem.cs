@@ -128,7 +128,7 @@ namespace Nyc.UI
                 h * 0.5f - pixel.y * s + S * (s - 1f) * 0.5f);
 
             if (_player != null)
-                _player.style.rotate = new Rotate(new Angle(-a.Heading * Mathf.Rad2Deg, AngleUnit.Degree));
+                _player.transform.rotation = Quaternion.Euler(0f, 0f, -a.Heading * Mathf.Rad2Deg);
         }
 
         void UpdateInfo(TravelController a)

@@ -2,8 +2,24 @@
 *.zip
 *.tar.gz
 *.7z
+*.rar
+*.unitypackage
 *.log
+*.exe
+*.mp4
 .workbuddy-ai/
+node_modules/
+
+# Temp root files and research directories
+/yo.jpg
+/get-document.*
+/paper_cloud_puff_*.html
+/Actua_como_Arquitect.txt
+/Generated Image*.jpg
+/_disabled-*/
+/_glb-*/
+/napali-main/
+Captures/DroneTrailer/
 
 # .NET / C# Build Outputs
 [Bb]in/

@@ -102,54 +102,85 @@ Shader "Nyc/VehiclePaint"
 
                 float night = saturate((_NycInteriorGlow - 0.45) * 1.6);
 
-                if (part < 0.5)                  // body
+                if (part < 0.5)                  // 0 = Body
                 {
                     albedo = _BaseColor.rgb;
                     smoothness = _Smoothness;
                     metallic = _Metallic;
                 }
-                else if (part < 1.5)             // glass
+                else if (part < 1.5)             // 1 = Glass
                 {
-                    albedo = float3(0.055, 0.075, 0.095);
-                    smoothness = 0.94;
-                    metallic = 0.10;
+                    albedo = float3(0.04, 0.06, 0.08);
+                    smoothness = 0.95;
+                    metallic = 0.15;
                 }
-                else if (part < 2.5)             // headlight
+                else if (part < 2.5)             // 2 = Headlight
                 {
-                    albedo = float3(0.85, 0.85, 0.8);
+                    albedo = float3(0.95, 0.95, 0.92);
+                    smoothness = 0.90;
+                    metallic = 0.0;
+                    emission = float3(1.0, 0.95, 0.85) * (0.35 + night * _HeadlightBoost);
+                }
+                else if (part < 3.5)             // 3 = Taillight
+                {
+                    albedo = float3(0.40, 0.03, 0.03);
                     smoothness = 0.85;
                     metallic = 0.0;
-                    emission = float3(1.0, 0.92, 0.78) * night * _HeadlightBoost;
+                    emission = float3(1.0, 0.08, 0.04) * (0.35 + night * 2.5);
                 }
-                else if (part < 3.5)             // taillight
-                {
-                    albedo = float3(0.35, 0.03, 0.03);
-                    smoothness = 0.80;
-                    metallic = 0.0;
-                    emission = float3(1.0, 0.07, 0.04) * (0.25 + night * 2.2);
-                }
-                else if (part < 4.5)             // tyre
+                else if (part < 4.5)             // 4 = Tyre
                 {
                     albedo = float3(0.025, 0.025, 0.028);
                     smoothness = 0.18;
                     metallic = 0.0;
                 }
-                else if (part < 5.5)             // MTA blue belt
+                else if (part < 5.5)             // 5 = Alloy Rim
+                {
+                    albedo = float3(0.75, 0.76, 0.78);
+                    smoothness = 0.82;
+                    metallic = 0.88;
+                }
+                else if (part < 6.5)             // 6 = Taxi Medallion Sign
+                {
+                    albedo = float3(1.0, 0.82, 0.12);
+                    smoothness = 0.70;
+                    metallic = 0.0;
+                    emission = float3(1.2, 0.95, 0.20) * (1.2 + night * 2.2);
+                }
+                else if (part < 7.5)             // 7 = MTA Blue Stripe
                 {
                     albedo = float3(0.0, 0.345, 0.72);
                     smoothness = 0.48;
                     metallic = 0.05;
                 }
-                else if (part < 6.5)             // MTA cyan ribbon
+                else if (part < 8.5)             // 8 = MTA Cyan Ribbon
                 {
                     albedo = float3(0.0, 0.66, 0.91);
                     smoothness = 0.42;
                     metallic = 0.02;
                 }
-                else                              // tyre
+                else if (part < 9.5)             // 9 = NYPD Red Strobe Light
                 {
-                    albedo = float3(0.025, 0.025, 0.028);
-                    smoothness = 0.18;
+                    albedo = float3(0.9, 0.05, 0.05);
+                    smoothness = 0.90;
+                    metallic = 0.0;
+                    // Dynamic wig-wag police strobe: alternating 4 Hz high-intensity flashes
+                    float flashRed = frac(_Time.y * 4.0) < 0.5 ? 4.5 : 0.15;
+                    emission = float3(3.2, 0.12, 0.08) * flashRed;
+                }
+                else if (part < 10.5)            // 10 = NYPD Blue Strobe Light
+                {
+                    albedo = float3(0.05, 0.2, 0.9);
+                    smoothness = 0.90;
+                    metallic = 0.0;
+                    // Inverted phase for NYPD wig-wag alternating pattern
+                    float flashBlue = frac(_Time.y * 4.0 + 0.5) < 0.5 ? 4.5 : 0.15;
+                    emission = float3(0.1, 0.6, 3.8) * flashBlue;
+                }
+                else                             // Fallback
+                {
+                    albedo = float3(0.15, 0.15, 0.15);
+                    smoothness = 0.30;
                     metallic = 0.0;
                 }
 
@@ -162,7 +193,8 @@ Shader "Nyc/VehiclePaint"
                 inputData.bakedGI = SampleSH(normalWS);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
-                half4 color = UniversalFragmentPBR(inputData, albedo, metallic, half3(0, 0, 0),
+                half3 specular = lerp(kDielectricSpec.rgb, albedo, metallic);
+                half4 color = UniversalFragmentPBR(inputData, albedo, metallic, specular,
                                                    smoothness, 1.0h, emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;

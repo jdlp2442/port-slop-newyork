@@ -136,46 +136,139 @@ Shader "Nyc/Facade"
                 float3 normalWS = normalize(input.normalWS);
                 float3 viewDir = GetWorldSpaceNormalizeViewDir(positionWS);
 
+                int style = (int)round(input.uv3.y);
+                float tone = input.uv2.y;
+
+                float winW = _WindowWidth;
+                float flrH = _FloorHeight;
+                float pier = _CornerPier;
+
+                if (style == 1)      { winW = 2.4; flrH = 3.5; }
+                else if (style == 2) { winW = 2.2; flrH = 3.4; }
+                else if (style == 0) { winW = 2.6; flrH = 3.7; }
+                else if (style == 3) { winW = 2.7; flrH = 3.9; pier = 0.0; }
+                else if (style == 4) { winW = 2.5; flrH = 3.8; pier = 0.0; }
+                else if (style == 5) { winW = 2.9; flrH = 4.1; pier = 0.0; }
+
                 NycFacadeCell cell = NycBuildFacadeCell(
                     positionWS, normalWS,
                     input.uv0.xy, input.uv1.xy, input.uv2.xy, input.uv3.xy, input.color,
-                    _WindowWidth, _FloorHeight, _CornerPier);
-
-                NycPrewarParams p;
-                p.stoneColor     = _StoneColor.rgb;
-                p.trimColor      = _TrimColor.rgb;
-                p.glassColor     = _GlassColor.rgb;
-                p.crownColor     = _CrownColor.rgb;
-                p.windowWidth    = _WindowWidth;
-                p.floorHeight    = _FloorHeight;
-                p.windowRatioX   = _WindowRatioX;
-                p.windowRatioY   = _WindowRatioY;
-                p.litProbability = _LitProbability;
-                p.warmth         = _Warmth;
-                p.cornerPier     = _CornerPier;
-                p.crownGlowHeight = _CrownGlowHeight;
+                    winW, flrH, pier);
 
                 float canyonBand = smoothstep(0.0, 14.0, positionWS.y)
                                  * (1.0 - smoothstep(22.0, 75.0, positionWS.y));
                 float3 canyonGlow = float3(0.91, 0.61, 0.41) * canyonBand * _NycCanyonBounce * 0.22;
 
+                // Per-building distinct character, weathering, and architectural variation
+                float bldSeed = input.color.b;
+                float wear = frac(bldSeed * 7.13 + 0.31); // 0 = freshly restored stone, 1 = historical patina
+                float streetPlinth = (1.0 - smoothstep(0.4, 4.2, positionWS.y)) * 0.18; // urban splash/soot at ground plinth
+                float rainSoot = frac(sin(floor(cell.uCoord * 3.0) * 12.9898 + bldSeed * 78.233) * 43758.5453) * 0.08 * wear;
+                float totalGrime = wear * 0.15 + streetPlinth + rainSoot;
+
                 NycSurface s;
-                if (input.uv3.y >= 2.5)
+                if (style >= 3)
                 {
+                    // Curtain-Wall Skyscraper Glass (Styles 3, 4, 5)
                     NycCurtainParams cp;
-                    cp.glassTint        = _GlassColor.rgb;
-                    cp.frameTint        = _TrimColor.rgb;
-                    cp.windowWidth      = _WindowWidth;
-                    cp.floorHeight      = _FloorHeight;
-                    cp.mullionThickness = 0.06;
-                    cp.spandrelRatio    = 0.32;
-                    cp.litProbability   = _LitProbability;
-                    cp.warmth           = _Warmth;
-                    cp.reflectivity     = 0.75;
+                    float3 glassStyle3[3] = {
+                        float3(0.010, 0.042, 0.084), // iconic deep teal-blue
+                        float3(0.012, 0.052, 0.068), // architectural emerald-cyan
+                        float3(0.008, 0.030, 0.072)  // navy evening reflection
+                    };
+                    cp.glassTint        = glassStyle3[min((int)(bldSeed * 3.0), 2)];
+                    cp.frameTint        = float3(0.044, 0.074, 0.105) * lerp(0.85, 1.15, tone); // 0x3b4c5b
+                    cp.windowWidth      = winW;
+                    cp.floorHeight      = flrH;
+                    cp.mullionThickness = 0.065;
+                    cp.spandrelRatio    = 0.22;
+                    cp.litProbability   = 0.60;
+                    cp.warmth           = 0.52;
+                    cp.reflectivity     = 0.92;
+
+                    if (style == 4) // Dark Bronze / Charcoal Miesian Glass (Style 4)
+                    {
+                        float3 glassStyle4[2] = {
+                            float3(0.017, 0.015, 0.013), // deep amber bronze
+                            float3(0.014, 0.014, 0.016)  // smokey charcoal grey
+                        };
+                        cp.glassTint = glassStyle4[min((int)(bldSeed * 2.0), 1)];
+                        cp.frameTint = float3(0.045, 0.037, 0.031) * lerp(0.85, 1.18, tone); // 0x3c3631
+                        cp.mullionThickness = 0.06;
+                        cp.spandrelRatio = 0.20;
+                        cp.litProbability = 0.64;
+                        cp.warmth = 0.72;
+                        cp.reflectivity = 0.88;
+                    }
+                    else if (style == 5) // Silver / Ice-Blue Contemporary Supertall Glass (Style 5)
+                    {
+                        float3 glassStyle5[3] = {
+                            float3(0.019, 0.062, 0.128), // deep ocean vision glass
+                            float3(0.024, 0.056, 0.105), // sapphire crystal
+                            float3(0.015, 0.070, 0.115)  // ice-cyan platinum
+                        };
+                        cp.glassTint = glassStyle5[min((int)(bldSeed * 3.0), 2)];
+                        cp.frameTint = float3(0.115, 0.145, 0.175) * lerp(0.90, 1.12, tone); // slate-blue anodized aluminum
+                        cp.mullionThickness = 0.07;
+                        cp.spandrelRatio = 0.18;
+                        cp.litProbability = 0.58;
+                        cp.warmth = 0.48;
+                        cp.reflectivity = 0.95;
+                    }
                     s = NycEvaluateCurtain(cell, positionWS, normalWS, _WorldSpaceCameraPos, cp, canyonGlow);
                 }
                 else
                 {
+                    // Pre-War Masonry (Styles 0, 1, 2)
+                    NycPrewarParams p;
+                    float3 stonePalette0[4] = {
+                        float3(0.460, 0.412, 0.335), // Indiana Buff Limestone
+                        float3(0.505, 0.465, 0.385), // Warm Cream Bedford
+                        float3(0.380, 0.355, 0.315), // Manhattan Grey Granite
+                        float3(0.425, 0.375, 0.290)  // Golden Sandstone
+                    };
+                    float3 baseStone0 = stonePalette0[min((int)(bldSeed * 4.0), 3)];
+                    p.stoneColor     = baseStone0 * lerp(0.86, 1.14, tone) * (1.0 - totalGrime);
+                    p.trimColor      = p.stoneColor * 0.74;
+                    p.glassColor     = float3(0.025, 0.040, 0.065); // 0x1a2836
+                    p.crownColor     = _CrownColor.rgb;
+                    p.windowWidth    = winW;
+                    p.floorHeight    = flrH;
+                    p.windowRatioX   = 0.50;
+                    p.windowRatioY   = 0.58;
+                    p.litProbability = 0.54;
+                    p.warmth         = 0.80;
+                    p.cornerPier     = pier;
+                    p.crownGlowHeight = _CrownGlowHeight;
+
+                    if (style == 1) // Historic Warm Red / Terracotta Brick (Style 1)
+                    {
+                        float3 brickPalette1[3] = {
+                            float3(0.350, 0.115, 0.075), // Deep Red Prewar Brick
+                            float3(0.415, 0.175, 0.105), // Warm Terracotta Clay
+                            float3(0.310, 0.135, 0.090)  // Toasted Dark Red Brick
+                        };
+                        float3 baseBrick = brickPalette1[min((int)(bldSeed * 3.0), 2)];
+                        p.stoneColor = baseBrick * lerp(0.86, 1.14, tone) * (1.0 - totalGrime * 0.9);
+                        p.trimColor = float3(0.395, 0.335, 0.255) * (1.0 - wear * 0.10);
+                        p.glassColor = float3(0.022, 0.035, 0.055);
+                        p.litProbability = 0.56;
+                        p.warmth = 0.86;
+                    }
+                    else if (style == 2) // Classic NYC Brownstone & Dark Masonry (Style 2)
+                    {
+                        float3 brownPalette2[3] = {
+                            float3(0.205, 0.108, 0.070), // Rich Chocolate Brownstone
+                            float3(0.245, 0.138, 0.088), // Warm Sienna Brownstone
+                            float3(0.165, 0.085, 0.058)  // Dark Patinated Aged Brownstone
+                        };
+                        float3 baseBrown = brownPalette2[min((int)(bldSeed * 3.0), 2)];
+                        p.stoneColor = baseBrown * lerp(0.85, 1.15, tone) * (1.0 - totalGrime * 1.1);
+                        p.trimColor = baseBrown * 0.65;
+                        p.glassColor = float3(0.020, 0.030, 0.048);
+                        p.litProbability = 0.60;
+                        p.warmth = 0.90;
+                    }
                     s = NycEvaluatePrewar(cell, positionWS, normalWS, _WorldSpaceCameraPos, p, canyonGlow);
                 }
 
@@ -194,7 +287,8 @@ Shader "Nyc/Facade"
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
                 half smoothness = saturate(1.0h - s.roughness);
-                half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, half3(0, 0, 0),
+                half3 specular = lerp(kDielectricSpec.rgb, s.albedo, s.metallic);
+                half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, specular,
                                                    smoothness, s.ao, s.emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;

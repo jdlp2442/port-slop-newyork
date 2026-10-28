@@ -49,6 +49,7 @@ namespace Nyc.Generation
         readonly List<Vector2> _uv0 = new List<Vector2>(1 << 16);
         readonly List<Vector2> _uv1 = new List<Vector2>(1 << 16);
         readonly List<Vector2> _uv2 = new List<Vector2>(1 << 16);
+        readonly List<Vector2> _uv3 = new List<Vector2>(1 << 16);
         readonly List<Color32> _col = new List<Color32>(1 << 16);
         readonly List<int> _tris = new List<int>(1 << 17);
 
@@ -61,7 +62,7 @@ namespace Nyc.Generation
                 return;
             }
 
-            _pos.Clear(); _nrm.Clear(); _uv0.Clear(); _uv1.Clear(); _uv2.Clear(); _col.Clear(); _tris.Clear();
+            _pos.Clear(); _nrm.Clear(); _uv0.Clear(); _uv1.Clear(); _uv2.Clear(); _uv3.Clear(); _col.Clear(); _tris.Clear();
             stripCount = 0;
 
             var geo = CityConfig.Geo;
@@ -75,22 +76,28 @@ namespace Nyc.Generation
             mesh.SetUVs(0, _uv0);
             mesh.SetUVs(1, _uv1);
             mesh.SetUVs(2, _uv2);
+            mesh.SetUVs(3, _uv3);
             mesh.SetColors(_col);
             mesh.SetTriangles(_tris, 0, false);
             mesh.RecalculateBounds();
 
             var mf = GetComponent<MeshFilter>();
+            if (!mf) mf = gameObject.AddComponent<MeshFilter>();
             mf.sharedMesh = mesh;
 
             var mr = GetComponent<MeshRenderer>();
+            if (!mr) mr = gameObject.AddComponent<MeshRenderer>();
             if (!paintMaterial)
             {
                 var s = Shader.Find("Nyc/RoadPaint");
                 if (s) paintMaterial = new Material(s) { name = "RoadPaintFallback" };
             }
-            if (paintMaterial) mr.sharedMaterial = paintMaterial;
-            mr.shadowCastingMode = ShadowCastingMode.Off;
-            mr.receiveShadows = true;
+            if (paintMaterial && mr) mr.sharedMaterial = paintMaterial;
+            if (mr)
+            {
+                mr.shadowCastingMode = ShadowCastingMode.Off;
+                mr.receiveShadows = true;
+            }
 
             vertexCount = _pos.Count;
             Debug.Log($"[NYC] Road markings: {stripCount} strips, {vertexCount:N0} verts.");
@@ -221,6 +228,7 @@ namespace Nyc.Generation
             _uv1.Add(new Vector2(period, duty));
             // side is authored in the source frame; Unity's z is negated.
             _uv2.Add(new Vector2(side.x, -side.y));
+            _uv3.Add(Vector2.zero);
             _col.Add(c);
         }
     }

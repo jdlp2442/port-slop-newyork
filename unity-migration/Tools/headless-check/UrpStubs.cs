@@ -55,7 +55,9 @@ namespace UnityEngine
 
     public static class DynamicGI { public static void UpdateEnvironment() { } }
 
-    public class Camera : Component { public static Camera main; public float fieldOfView; public float nearClipPlane; public float farClipPlane; }
+    public enum CameraClearFlags { Skybox = 1, Color = 2, SolidColor = 2, Depth = 3, Nothing = 4 }
+
+    public class Camera : Component { public static Camera main; public float fieldOfView; public float nearClipPlane; public float farClipPlane; public CameraClearFlags clearFlags = CameraClearFlags.Skybox; public Vector3 WorldToViewportPoint(Vector3 p) => Vector3.zero; }
 
     public static class Time
     {

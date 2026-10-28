@@ -43,5 +43,6 @@ namespace Nyc.Rendering
         public static readonly int CloudDensity    = Shader.PropertyToID("_CloudDensity");
         public static readonly int CloudElevation  = Shader.PropertyToID("_CloudElevation");
         public static readonly int CloudScale      = Shader.PropertyToID("_CloudScale");
+        public static readonly int ShowSunDisc     = Shader.PropertyToID("_ShowSunDisc");
     }
 }

@@ -156,7 +156,8 @@ Shader "Nyc/CurtainWall"
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
                 half smoothness = saturate(1.0h - s.roughness);
-                half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, half3(0, 0, 0),
+                half3 specular = lerp(kDielectricSpec.rgb, s.albedo, s.metallic);
+                half4 color = UniversalFragmentPBR(inputData, s.albedo, s.metallic, specular,
                                                    smoothness, s.ao, s.emission, 1.0h);
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 return color;

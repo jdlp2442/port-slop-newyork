@@ -1,0 +1,11 @@
+{
+  "name": "nyc-parity-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Capture diff and shader-math checks for the Unity/Web parity matrix",
+  "type": "module",
+  "dependencies": {
+    "pixelmatch": "^8.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

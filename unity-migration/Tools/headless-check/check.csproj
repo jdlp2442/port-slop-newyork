@@ -17,6 +17,7 @@
     <Compile Include="JobsStubs.cs" />
     <Compile Include="UiToolkitStubs.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="../../Assets/Scripts/Art/ImportedArtLibrary.cs" />
     <Compile Include="../../Assets/Scripts/Core/CityFrame.cs" />
     <Compile Include="../../Assets/Scripts/Data/NycGeoData.cs" />
     <Compile Include="../../Assets/Scripts/Data/NycGeoDataLoader.cs" />

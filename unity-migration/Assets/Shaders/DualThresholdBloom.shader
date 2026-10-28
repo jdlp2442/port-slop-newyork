@@ -45,10 +45,13 @@ Shader "Hidden/Nyc/DualThresholdBloom"
 
                 float4 col = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
 
+                // Port of post-processing.js: expose and balance scene radiance before peak limiter
+                float3 exposed = max(col.rgb, 0.0) * _GradingParams.x * _ColorBalance.rgb;
+
                 // Peak limiter from post-processing.js:
-                float peak = max(max(col.r, col.g), col.b);
+                float peak = max(max(exposed.r, exposed.g), exposed.b);
                 float peakLimit = _ThresholdParams.z > 0.0 ? _ThresholdParams.z : 8.0;
-                float3 limited = col.rgb * (peakLimit / max(peak, peakLimit));
+                float3 limited = exposed * (peakLimit / max(peak, peakLimit));
 
                 // Soft knee dual-threshold
                 float threshold = _ThresholdParams.x;
@@ -114,10 +117,8 @@ Shader "Hidden/Nyc/DualThresholdBloom"
                 float4 bloomCol = SAMPLE_TEXTURE2D(_BloomTex, sampler_LinearClamp, uv);
 
                 float intensity = _ThresholdParams.w;
-                float3 color = baseCol.rgb + bloomCol.rgb * intensity;
-
-                // Color Balance
-                color *= _ColorBalance.rgb;
+                float3 exposed = max(baseCol.rgb, 0.0) * _GradingParams.x * _ColorBalance.rgb;
+                float3 color = exposed + bloomCol.rgb * intensity;
 
                 // Tone luminance & cool shadow / warm highlight split from post-processing.js
                 float luma = dot(color, float3(0.2126, 0.7152, 0.0722));

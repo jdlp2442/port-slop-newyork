@@ -94,6 +94,47 @@ namespace Nyc.Gameplay
             return _query;
         }
 
+        /// <summary>
+        /// Returns the highest roof surface at (x, z) within radius, or 0 if on the ground/street.
+        /// When currentAltitude is provided, only surfaces at or below the entity (with up to 2.5m headroom)
+        /// are considered so tall walls beside the mover do not catapult them into the sky.
+        /// </summary>
+        public float GetRoofHeight(float x, float z, float currentAltitude = float.MaxValue, float radius = 0f)
+        {
+            if (_boxes.Length == 0) return 0f;
+            float reach = radius + 2f;
+            var near = Query(new Vector2(x, z), reach);
+            float maxRoof = 0f;
+
+            for (int i = 0; i < near.Count; i++)
+            {
+                CollisionBox c = _boxes[near[i]];
+                if (c.MaxY <= maxRoof) continue;
+                if (currentAltitude < float.MaxValue && c.MaxY > currentAltitude + 2.5f) continue;
+
+                if (c.HasObb)
+                {
+                    float dx = x - c.Cx;
+                    float dz = z - c.Cz;
+                    float lx = dx * c.Cs - dz * c.Sn;
+                    float lz = dx * c.Sn + dz * c.Cs;
+                    if (Mathf.Abs(lx) <= c.Hx + radius && Mathf.Abs(lz) <= c.Hz + radius)
+                    {
+                        if (c.MaxY > maxRoof) maxRoof = c.MaxY;
+                    }
+                }
+                else
+                {
+                    if (x + radius >= c.MinX && x - radius <= c.MaxX &&
+                        z + radius >= c.MinZ && z - radius <= c.MaxZ)
+                    {
+                        if (c.MaxY > maxRoof) maxRoof = c.MaxY;
+                    }
+                }
+            }
+            return maxRoof;
+        }
+
         // ------------------------------------------------------------------ resolve
 
         /// <summary>
@@ -114,7 +155,7 @@ namespace Nyc.Gameplay
             for (int i = 0; i < near.Count; i++)
             {
                 CollisionBox c = _boxes[near[i]];
-                if (yHeight > c.MaxY + 1.5f) continue;
+                if (yHeight >= c.MaxY - 0.25f || yHeight < c.MinY - 0.8f) continue;
 
                 if (pos.x + extX <= c.MinX || pos.x - extX >= c.MaxX ||
                     pos.y + extZ <= c.MinZ || pos.y - extZ >= c.MaxZ) continue;
@@ -181,7 +222,7 @@ namespace Nyc.Gameplay
             for (int i = 0; i < near.Count; i++)
             {
                 CollisionBox c = _boxes[near[i]];
-                if (yHeight > c.MaxY + 1.5f) continue;
+                if (yHeight >= c.MaxY - 0.25f || yHeight < c.MinY - 0.8f) continue;
                 if (pos.x + extX <= c.MinX || pos.x - extX >= c.MaxX ||
                     pos.y + extZ <= c.MinZ || pos.y - extZ >= c.MaxZ) continue;
 
@@ -194,6 +235,80 @@ namespace Nyc.Gameplay
                 if (Mathf.Abs(lx) < c.Hx + extX && Mathf.Abs(lz) < c.Hz + extZ) return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Fast 2D line test against building colliders. Returns true if a building blocks line of sight.
+        /// </summary>
+        public bool HasBuildingBetween(Vector2 a, Vector2 b, float minHeight = 6f)
+        {
+            if (_boxes.Length == 0) return false;
+            float dist = Vector2.Distance(a, b);
+            if (dist < 2f) return false;
+
+            Vector2 dir = (b - a) / dist;
+            float step = 24f; // sample cells along line
+            int steps = Mathf.Max(1, Mathf.CeilToInt(dist / step));
+            int stamp = ++_tick;
+
+            for (int s = 1; s < steps; s++)
+            {
+                Vector2 sample = a + dir * (s * step);
+                int ix = Mathf.FloorToInt(sample.x / Cell);
+                int iz = Mathf.FloorToInt(sample.y / Cell);
+                if (!_cells.TryGetValue(Key(ix, iz), out var list)) continue;
+
+                for (int k = 0; k < list.Count; k++)
+                {
+                    int idx = list[k];
+                    if (_stamp[idx] == stamp) continue;
+                    _stamp[idx] = stamp;
+                    CollisionBox c = _boxes[idx];
+                    if (c.MaxY < minHeight) continue;
+
+                    // 2D segment vs AABB intersection
+                    if (SegmentIntersectsAabb(a, b, c.MinX, c.MaxX, c.MinZ, c.MaxZ))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        static bool SegmentIntersectsAabb(Vector2 p0, Vector2 p1, float minX, float maxX, float minZ, float maxZ)
+        {
+            float dx = p1.x - p0.x;
+            float dz = p1.y - p0.y;
+            float t0 = 0f, t1 = 1f;
+
+            if (Mathf.Abs(dx) < 0.0001f)
+            {
+                if (p0.x < minX || p0.x > maxX) return false;
+            }
+            else
+            {
+                float invDx = 1f / dx;
+                float tx1 = (minX - p0.x) * invDx;
+                float tx2 = (maxX - p0.x) * invDx;
+                t0 = Mathf.Max(t0, Mathf.Min(tx1, tx2));
+                t1 = Mathf.Min(t1, Mathf.Max(tx1, tx2));
+                if (t0 > t1) return false;
+            }
+
+            if (Mathf.Abs(dz) < 0.0001f)
+            {
+                if (p0.y < minZ || p0.y > maxZ) return false;
+            }
+            else
+            {
+                float invDz = 1f / dz;
+                float tz1 = (minZ - p0.y) * invDz;
+                float tz2 = (maxZ - p0.y) * invDz;
+                t0 = Mathf.Max(t0, Mathf.Min(tz1, tz2));
+                t1 = Mathf.Min(t1, Mathf.Max(tz1, tz2));
+                if (t0 > t1) return false;
+            }
+
+            return true;
         }
     }
 }

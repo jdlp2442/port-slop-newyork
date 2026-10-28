@@ -91,8 +91,8 @@ Shader "Nyc/Pedestrian"
 
                 float pivotY = 0.0;
                 float amplitude = 0.0;
-                if (part > 3.5)       { pivotY = 0.88; amplitude = 0.58; }   // legs
-                else if (part > 1.5)  { pivotY = 1.44; amplitude = 0.42; }   // arms
+                if (part > 3.5)       { pivotY = 0.88; amplitude = 0.62; }   // legs: crisp scissor stride
+                else if (part > 1.5)  { pivotY = 1.44; amplitude = 0.48; }   // arms: clear arm swing
 
                 float swing = sin(phase + offset) * amplitude * saturate(speed / 1.4) * t;
 
@@ -102,6 +102,19 @@ Shader "Nyc/Pedestrian"
                 float sn = sin(swing);
                 rel = float3(rel.x, rel.y * cs - rel.z * sn, rel.y * sn + rel.z * cs);
                 p = rel + float3(0.0, pivotY, 0.0);
+
+                // Organic gait dynamics: natural torso/shoulder counter-rotation & stride bob
+                // Makes pedestrians instantly recognizable as real walking humans from high/aerial views
+                float gaitNorm = saturate(speed / 1.4);
+                if (part < 1.5)
+                {
+                    float torsoYaw = sin(phase) * 0.052 * gaitNorm; // subtle shoulder sway
+                    float cy = cos(torsoYaw);
+                    float sy = sin(torsoYaw);
+                    p = float3(p.x * cy + p.z * sy, p.y, -p.x * sy + p.z * cy);
+                }
+                float strideBob = abs(sin(phase)) * 0.034 * gaitNorm;
+                p.y += strideBob;
                 p *= scale;
 
                 float heading = inst.posHeading.w;
@@ -180,7 +193,22 @@ Shader "Nyc/Pedestrian"
 
             half4 Frag(Varyings input) : SV_Target
             {
+                // Smooth distance-based dither fade to eliminate pop-in at horizon and from aerial views
+                float camDist = length(input.positionWS - _WorldSpaceCameraPos);
+                float fade = 1.0 - saturate((camDist - 440.0) / 90.0);
+                float2 screenPos = input.positionCS.xy;
+                int2 ditherCoord = int2(fmod(screenPos, 4.0));
+                float dither[16] = {
+                    0.0625, 0.5625, 0.1875, 0.6875,
+                    0.8125, 0.3125, 0.9375, 0.4375,
+                    0.2500, 0.7500, 0.1250, 0.6250,
+                    1.0000, 0.5000, 0.8750, 0.3750
+                };
+                float threshold = dither[ditherCoord.y * 4 + ditherCoord.x];
+                clip(fade - threshold);
+
                 float3 normalWS = normalize(input.normalWS);
+                float3 viewDir = normalize(_WorldSpaceCameraPos - input.positionWS);
 
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
                 float ndl = saturate(dot(normalWS, mainLight.direction));
@@ -193,7 +221,12 @@ Shader "Nyc/Pedestrian"
                 float3 ambient = lerp(groundFill, skyFill, hemi) * _AmbientBoost + SampleSH(normalWS) * 0.35;
                 ambient = max(ambient, float3(0.24, 0.24, 0.26));
 
-                float3 lighting = mainLight.color * ndl * shadow + ambient;
+                // Distinct human silhouette contrast from both street level and aerial (helicopter/flight) cameras
+                float fresnel = pow(1.0 - saturate(dot(normalWS, viewDir)), 3.0);
+                float topDownAngle = saturate(viewDir.y * 1.4);
+                float3 rimGlow = mainLight.color * fresnel * (0.28 + topDownAngle * 0.25);
+
+                float3 lighting = mainLight.color * ndl * shadow + ambient + rimGlow;
                 float3 col = input.color.rgb * lighting;
 
                 col = MixFog(col, input.fogCoord);

@@ -38,10 +38,20 @@ const state = { busy: false };
 function fract(x) { return x - Math.floor(x); }
 
 function materialFor(src, fallback) {
+  // Keep actual web images when a material owns one (billboards, leaf cards, decals).
+  // TSL node graphs themselves are not serializable, so scalar fallback values still
+  // become MeshStandardMaterial properties while CanvasTexture/DataTexture maps travel
+  // through GLTFExporter and are embedded in the resulting GLB.
+  const map = src && src.map && src.map.isTexture ? src.map : null;
+  const normalMap = src && src.normalMap && src.normalMap.isTexture ? src.normalMap : null;
+  const emissiveMap = src && src.emissiveMap && src.emissiveMap.isTexture ? src.emissiveMap : null;
   const m = new THREE.MeshStandardMaterial({
     color: src && src.color ? src.color.clone() : new THREE.Color(fallback),
     roughness: src && Number.isFinite(src.roughness) ? src.roughness : 0.85,
     metalness: src && Number.isFinite(src.metalness) ? src.metalness : 0.0,
+    map,
+    normalMap,
+    emissiveMap,
     side: THREE.FrontSide
   });
   m.name = (src && src.name) || 'nyc_material';

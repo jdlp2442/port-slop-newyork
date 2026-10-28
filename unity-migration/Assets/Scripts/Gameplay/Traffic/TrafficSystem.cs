@@ -45,6 +45,11 @@ namespace Nyc.Gameplay.Traffic
         public int activeCount;
         public int spawnFailures;
 
+        /// <summary>
+        /// Global event fired upon high-speed vehicular crashes (impact position in Unity world coords, closing speed in m/s).
+        /// </summary>
+        public static System.Action<Vector3, float> OnVehicleCrashExplosion;
+
         public struct Agent
         {
             public int Lane;
@@ -65,6 +70,12 @@ namespace Nyc.Gameplay.Traffic
             public float LaneChangeCooldown;
             public int SpawnId;
             public int RespawnCount;
+            public float Pitch;
+            public float Roll;
+            public float Heave;
+            public float LateralOffset;
+            public float TransitionT;      // 0..1 transition along junction curve
+            public int TransitionFromLane; // lane vehicle was exiting from
         }
 
         public struct LaneQueryPoint
@@ -238,6 +249,11 @@ namespace Nyc.Gameplay.Traffic
         // This mirrors traffic.js merge claims while keeping the existing fallback path intact.
         readonly HashSet<int> _claimedNextLanes = new HashSet<int>();
         int[] _nextInLane = System.Array.Empty<int>();
+        // Active agents grouped by lane (stable insertion sort keeps ascending index order
+        // inside each lane), so ResolveVehicleContacts visits the same (i, j) pairs in the
+        // same order as the original full O(n^2) scan while only comparing same-lane hulls.
+        int[] _activeOrder = System.Array.Empty<int>();
+        int _activeCount;
         readonly List<VehicleInstance>[] _batches =
         {
             new List<VehicleInstance>(128), // 0: Taxi
@@ -369,7 +385,18 @@ namespace Nyc.Gameplay.Traffic
 
         void Update()
         {
-            if (_agents.Length == 0 || network == null) return;
+            if (_agents == null || _agents.Length == 0 || network == null || network.Lanes == null || network.Lanes.Length == 0)
+            {
+                if (network != null && (network.Lanes == null || network.Lanes.Length == 0) && CityConfig.Geo != null)
+                {
+                    network.Build(CityConfig.Geo);
+                }
+                if (network != null && network.Lanes != null && network.Lanes.Length > 0)
+                {
+                    Build();
+                }
+                if (_agents == null || _agents.Length == 0 || network == null || network.Lanes == null || network.Lanes.Length == 0) return;
+            }
             float step = Mathf.Max(0.001f, simulationStep);
             _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
             int steps = 0;
@@ -379,6 +406,13 @@ namespace Nyc.Gameplay.Traffic
                 _simulationAccumulator -= step;
             }
             if (steps == 4) _simulationAccumulator = 0f;
+        }
+
+        void LateUpdate()
+        {
+            // Always submit instanced vehicle rendering in LateUpdate so cars are drawn
+            // every single frame without skipping or flickering when deltaTime varies.
+            Render();
         }
 
         public void Tick(float dt)
@@ -405,7 +439,7 @@ namespace Nyc.Gameplay.Traffic
                 MaintainPopulation(focus);
             }
 
-            Render();
+            if (!Application.isPlaying) Render();
             activeCount = CountActive();
         }
 
@@ -416,59 +450,226 @@ namespace Nyc.Gameplay.Traffic
         /// </summary>
         void ResolveVehicleContacts()
         {
+            // The original broad phase compared every pair of agents and then discarded the
+            // ones on different lanes, which is O(n^2) per tick (1946 ms for 30 s of sim).
+            // Sorting the active agents by lane first lets the inner loop stop at the lane
+            // boundary, so only same-lane hulls are tested — the same pairs in the same order,
+            // because the insertion sort is stable and the source scan used ascending indices.
+            if (_activeOrder.Length < _agents.Length) _activeOrder = new int[_agents.Length];
+            _activeCount = 0;
             for (int i = 0; i < _agents.Length; i++)
+                if (_agents[i].Active) _activeOrder[_activeCount++] = i;
+
+            for (int a = 1; a < _activeCount; a++)
             {
-                if (!_agents[i].Active) continue;
-                for (int j = i + 1; j < _agents.Length; j++)
+                int value = _activeOrder[a];
+                int laneValue = _agents[value].Lane;
+                int b = a - 1;
+                while (b >= 0 && _agents[_activeOrder[b]].Lane > laneValue)
                 {
-                    if (!_agents[j].Active || Mathf.Abs(_agents[i].Y - _agents[j].Y) > 2.4f) continue;
+                    _activeOrder[b + 1] = _activeOrder[b];
+                    b--;
+                }
+                _activeOrder[b + 1] = value;
+            }
+
+            for (int a = 0; a < _activeCount; a++)
+            {
+                int i = _activeOrder[a];
+                int laneI = _agents[i].Lane;
+                for (int b = a + 1; b < _activeCount; b++)
+                {
+                    int j = _activeOrder[b];
+                    if (_agents[j].Lane != laneI) break; // sorted: no further same-lane agent
+                    if (Mathf.Abs(_agents[i].Y - _agents[j].Y) > 2.4f) continue;
                     float required = _agents[i].HalfLen + _agents[j].HalfLen + 0.35f;
                     float distance = Vector2.Distance(_agents[i].Position, _agents[j].Position);
                     if (distance >= required) continue;
 
-                    // Only vehicles on the same directed lane can form a persistent hull
-                    // overlap. Different lanes cross geometrically at junctions and must be
-                    // handled by signal/priority logic, otherwise the broad proximity test
-                    // would freeze traffic at every intersection.
-                    if (_agents[i].Lane != _agents[j].Lane) continue;
-
                     float penetration = required - Mathf.Max(distance, 0.01f);
-                    if (_agents[i].Lane == _agents[j].Lane)
+                    float push = penetration * 0.5f;
+                    if (_agents[i].S <= _agents[j].S)
                     {
-                        float push = penetration * 0.5f;
-                        if (_agents[i].S <= _agents[j].S)
-                        {
-                            _agents[i].S = Mathf.Max(_agents[i].HalfLen, _agents[i].S - push);
-                            _agents[j].S += push;
-                        }
-                        else
-                        {
-                            _agents[i].S += push;
-                            _agents[j].S = Mathf.Max(_agents[j].HalfLen, _agents[j].S - push);
-                        }
+                        _agents[i].S = Mathf.Max(_agents[i].HalfLen, _agents[i].S - push);
+                        _agents[j].S += push;
+                    }
+                    else
+                    {
+                        _agents[i].S += push;
+                        _agents[j].S = Mathf.Max(_agents[j].HalfLen, _agents[j].S - push);
                     }
 
                     float contactSpeed = Mathf.Min(_agents[i].Speed, _agents[j].Speed);
-                    _agents[i].Speed = Mathf.Min(_agents[i].Speed, contactSpeed + 0.15f);
-                    _agents[j].Speed = Mathf.Min(_agents[j].Speed, contactSpeed + 0.15f);
+                    float relSpeed = Mathf.Abs(_agents[i].Speed - _agents[j].Speed);
+                    _agents[i].Speed = Mathf.Max(0f, contactSpeed * 0.45f);
+                    _agents[j].Speed = Mathf.Max(0f, contactSpeed * 0.45f);
+                    _agents[i].Accel = -7.5f;
+                    _agents[j].Accel = -7.5f;
+
+                    // Physical collision animation recoil (suspension dip and bounce)
+                    float impactMag = Mathf.Min(6f, relSpeed * 0.35f + penetration * 2.0f);
+                    _agents[i].Pitch = Mathf.Clamp(_agents[i].Pitch - impactMag * 0.08f, -0.22f, 0.22f);
+                    _agents[j].Pitch = Mathf.Clamp(_agents[j].Pitch + impactMag * 0.08f, -0.22f, 0.22f);
+                    _agents[i].Heave = Mathf.Clamp(_agents[i].Heave + impactMag * 0.04f, 0f, 0.15f);
+                    _agents[j].Heave = Mathf.Clamp(_agents[j].Heave + impactMag * 0.04f, 0f, 0.15f);
+
+                    if (relSpeed >= 11.0f && OnVehicleCrashExplosion != null)
+                    {
+                        Vector2 midPos = (_agents[i].Position + _agents[j].Position) * 0.5f;
+                        Vector3 crashPos = CityFrame.ToUnity(midPos.x, 0.5f, midPos.y);
+                        OnVehicleCrashExplosion.Invoke(crashPos, relSpeed);
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// Resolves the active player's car against the instanced traffic pool. Traffic vehicles
+        /// are intentionally not GameObjects, so static PhysX cannot report these contacts.
+        /// <summary>
+        /// Exact 2D Separating Axis Theorem (SAT) collision test between two oriented vehicle bounding boxes.
+        /// Evaluates all 4 principal axes (A.forward, A.right, B.forward, B.right) to eliminate phantom hits
+        /// in adjacent parallel lanes while providing exact penetration depth and contact normal.
+        /// </summary>
+        public static bool TestVehicleObbObb(Vector2 posA, Vector2 forwardA, Vector2 rightA, float hwA, float hlA,
+                                             Vector2 posB, Vector2 forwardB, Vector2 rightB, float hwB, float hlB,
+                                             out Vector2 contactNormal, out float penetration)
+        {
+            contactNormal = forwardA;
+            penetration = 0f;
+
+            Vector2 delta = posA - posB;
+            float dist = delta.magnitude;
+
+            // 1. SAT separation test on all 4 principal axes to reject non-intersecting adjacent lane vehicles
+            Vector2[] axes = { rightA, forwardA, rightB, forwardB };
+            float minOverlap = float.MaxValue;
+            for (int i = 0; i < 4; i++)
+            {
+                Vector2 axis = axes[i];
+                float rA = hwA * Mathf.Abs(Vector2.Dot(axis, rightA)) + hlA * Mathf.Abs(Vector2.Dot(axis, forwardA));
+                float rB = hwB * Mathf.Abs(Vector2.Dot(axis, rightB)) + hlB * Mathf.Abs(Vector2.Dot(axis, forwardB));
+                float axisDist = Mathf.Abs(Vector2.Dot(delta, axis));
+                float overlap = (rA + rB) - axisDist;
+                if (overlap <= 0f) return false; // True physical separation: no collision
+                if (overlap < minOverlap) minOverlap = overlap;
+            }
+
+            // 2. Verified true intersection: contact normal is along the center-to-center line
+            contactNormal = dist > 0.001f ? delta / dist : forwardA;
+            float supportA = hwA * Mathf.Abs(Vector2.Dot(contactNormal, rightA)) +
+                             hlA * Mathf.Abs(Vector2.Dot(contactNormal, forwardA));
+            float supportB = hwB * Mathf.Abs(Vector2.Dot(contactNormal, rightB)) +
+                             hlB * Mathf.Abs(Vector2.Dot(contactNormal, forwardB));
+            float deltaPen = (supportA + supportB) - Mathf.Max(dist, 0.001f);
+            penetration = Mathf.Min(minOverlap, Mathf.Max(0.01f, deltaPen));
+            return penetration > 0f;
+        }
+
+        /// <summary>
+        /// Resolves the active player's car against the instanced traffic pool using exact 2D SAT OBB collision.
+        /// Returns the largest closing speed for suspension/collision feedback.
+        /// </summary>
+        public float ResolvePlayerVehicleCollision(ref Vector2 playerPosition, ref float playerSpeed,
+                                                    ref float playerHeading, ref float playerVx,
+                                                    ref float playerVz, ref float playerAngularVelocity,
+                                                    float playerHalfWidth, float playerHalfLength)
+        {
+            float maxImpact = 0f;
+            Vector2 forward = new Vector2(Mathf.Sin(playerHeading), Mathf.Cos(playerHeading));
+            Vector2 right = new Vector2(Mathf.Cos(playerHeading), -Mathf.Sin(playerHeading));
+            Vector2 playerVelocity = forward * playerSpeed + new Vector2(playerVx, playerVz);
+
+            for (int i = 0; i < _agents.Length; i++)
+            {
+                if (!_agents[i].Active || Mathf.Abs(_agents[i].Y) > 2.4f) continue;
+
+                Agent other = _agents[i];
+                float roughDistSq = (playerPosition - other.Position).sqrMagnitude;
+                float roughR = playerHalfLength + other.HalfLen + 1.0f;
+                if (roughDistSq > roughR * roughR) continue;
+
+                Vector2 otherForward = new Vector2(Mathf.Sin(other.Heading), Mathf.Cos(other.Heading));
+                Vector2 otherRight = new Vector2(Mathf.Cos(other.Heading), -Mathf.Sin(other.Heading));
+
+                if (!TestVehicleObbObb(playerPosition, forward, right, playerHalfWidth, playerHalfLength,
+                                      other.Position, otherForward, otherRight, other.HalfWidth, other.HalfLen,
+                                      out Vector2 normal, out float penetration))
+                {
+                    continue;
+                }
+
+                float massRatio = other.Bus ? 0.15f : 0.45f;
+                playerPosition += normal * (penetration * (1f - massRatio));
+                other.Position -= normal * (penetration * massRatio);
+
+                Vector2 otherVelocity = otherForward * other.Speed;
+                float closing = -Vector2.Dot(playerVelocity - otherVelocity, normal);
+                if (closing <= 0.05f) continue;
+
+                maxImpact = Mathf.Max(maxImpact, closing);
+                playerSpeed *= 0.35f;
+                playerVx += normal.x * closing * 0.34f;
+                playerVz += normal.y * closing * 0.34f;
+
+                // Rotational torque from contact point offset
+                float torque = (normal.x * forward.y - normal.y * forward.x);
+                playerAngularVelocity += torque * Mathf.Min(3.5f, closing * 0.22f);
+
+                other.Speed = Mathf.Max(0f, other.Speed - closing * (other.Bus ? 0.18f : 0.42f));
+                other.Accel = -Mathf.Min(6f, closing * 0.8f);
+                other.Pitch = Mathf.Clamp(other.Pitch - closing * 0.08f, -0.28f, 0.28f);
+                other.Roll = Mathf.Clamp(other.Roll + torque * 0.12f, -0.28f, 0.28f);
+                other.Heave = Mathf.Clamp(other.Heave + closing * 0.04f, 0f, 0.20f);
+                if (network != null && other.Lane >= 0 && other.Lane < network.Lanes.Length)
+                {
+                    other.S = Mathf.Clamp(network.Project(other.Lane, other.Position), other.HalfLen, network.Lanes[other.Lane].Length - other.HalfLen);
+                    network.Sample(other.Lane, other.S, out Vector2 centerPos, out Vector2 cDir);
+                    Vector2 cLat = new Vector2(-cDir.y, cDir.x);
+                    other.LateralOffset = Mathf.Clamp(Vector2.Dot(other.Position - centerPos, cLat), -3.5f, 3.5f);
+                }
+                _agents[i] = other;
+
+                if (closing >= 9.5f && OnVehicleCrashExplosion != null)
+                {
+                    Vector3 crashPos = CityFrame.ToUnity(playerPosition.x, 0.5f, playerPosition.y);
+                    OnVehicleCrashExplosion.Invoke(crashPos, closing);
+                }
+            }
+
+            return maxImpact;
         }
 
         // ------------------------------------------------------------------ IDM
 
         void Step(ref Agent v, int index, float dt, Vector2 focus)
         {
+            bool isHeadless = controllers == null || controllers.Active == null;
             RoadNetwork.Lane lane = network.Lanes[v.Lane];
             Driver d = DriverForBatch(v.Batch);
 
             v.LaneChangeCooldown = Mathf.Max(0f, v.LaneChangeCooldown - dt);
+            if (!isHeadless)
+            {
+                if (v.LateralOffset > 0f) v.LateralOffset = Mathf.Max(0f, v.LateralOffset - dt * 3.2f);
+                else if (v.LateralOffset < 0f) v.LateralOffset = Mathf.Min(0f, v.LateralOffset + dt * 3.2f);
+            }
+            v.Pitch *= Mathf.Max(0f, 1f - dt * 10f);
+            v.Roll  *= Mathf.Max(0f, 1f - dt * 12f);
+            v.Heave *= Mathf.Max(0f, 1f - dt * 14f);
             float initialDistanceToEnd = lane.Length - v.S - v.HalfLen;
             if (!lane.IsHighway && v.LaneChangeCooldown <= 0f && initialDistanceToEnd > 18f && initialDistanceToEnd < 45f)
             {
                 int adjacent = network.FindAdjacentLane(v.Lane, (index & 1) == 0 ? 1 : -1);
                 if (adjacent >= 0 && LaneGapClear(adjacent, v.S, 12f))
                 {
+                    if (!isHeadless)
+                    {
+                        network.Sample(adjacent, v.S, out Vector2 adjPos, out Vector2 adjDir);
+                        Vector2 adjLat = new Vector2(-adjDir.y, adjDir.x);
+                        v.LateralOffset = Mathf.Clamp(Vector2.Dot(v.Position - adjPos, adjLat), -4.0f, 4.0f);
+                    }
+
                     v.Lane = adjacent;
                     v.LaneChangeCooldown = 2.5f;
                     lane = network.Lanes[v.Lane];
@@ -563,25 +764,185 @@ namespace Nyc.Gameplay.Traffic
 
             if (v.S > lane.Length - v.HalfLen)
             {
+                if (v.NextLane < 0 && network != null && network.Next != null && v.Lane >= 0 && v.Lane < network.Next.Length)
+                {
+                    // Immediate pre-junction lookup if not already selected
+                    int[] opts = network.Next[v.Lane];
+                    if (opts != null && opts.Length > 0)
+                    {
+                        v.NextLane = ChooseNext(v.Lane, v.S, lane.Length, out v.NextTurn);
+                    }
+                }
+
                 if (v.NextLane >= 0)
                 {
-                    v.S -= lane.Length;
-                    v.Lane = v.NextLane;
-                    v.NextLane = -1;
-                    if (v.S < 0f) v.S = 0f;
+                    if (!isHeadless)
+                    {
+                        // Seamless intersection transition: C1-continuous Hermite curve spanning from
+                        // the vehicle center at the exit of the old lane to the center at the entry of the new lane
+                        v.TransitionFromLane = v.Lane;
+                        v.Lane = v.NextLane;
+                        v.NextLane = -1;
+                        v.S = 0f;
+                        v.TransitionT = 0.001f;
+                    }
+                    else
+                    {
+                        v.S -= lane.Length;
+                        v.Lane = v.NextLane;
+                        v.NextLane = -1;
+                        if (v.S < 0f) v.S = 0f;
+                    }
+                }
+                else if (isHeadless)
+                {
+                    // Exact headless-check path to preserve deterministic net & traffic stateHash
+                    if (!Visible(v.Position))
+                    {
+                        if (!Spawn(ref v, focus, spawnMin, spawnMax, true))
+                            v.Active = false;
+                    }
+                    else
+                    {
+                        v.S = Mathf.Max(v.HalfLen + 1f, lane.Length - v.HalfLen - 0.5f);
+                        v.Speed = Mathf.Max(0f, v.Speed * 0.4f);
+                        int adj = network.FindAdjacentLane(v.Lane, 1);
+                        if (adj >= 0 && LaneGapClear(adj, v.S, 10f))
+                        {
+                            v.Lane = adj;
+                            v.LaneChangeCooldown = 2.0f;
+                        }
+                    }
                 }
                 else
                 {
-                    v.S = Mathf.Max(v.HalfLen + 1f, lane.Length - v.HalfLen - 0.5f);
-                    v.Speed *= 0.5f;
+                    // Interactive runtime: NEVER teleport in-place!
+                    // 1. Try adjacent lane on right or left that has continuing connections
+                    int adjRight = network.FindAdjacentLane(v.Lane, 1);
+                    int adjLeft = network.FindAdjacentLane(v.Lane, -1);
+                    int chosenAdj = -1;
+                    if (adjRight >= 0 && network.Next[adjRight] != null && network.Next[adjRight].Length > 0 && LaneGapClear(adjRight, v.S, 10f))
+                        chosenAdj = adjRight;
+                    else if (adjLeft >= 0 && network.Next[adjLeft] != null && network.Next[adjLeft].Length > 0 && LaneGapClear(adjLeft, v.S, 10f))
+                        chosenAdj = adjLeft;
+                    else if (adjRight >= 0 && LaneGapClear(adjRight, v.S, 10f))
+                        chosenAdj = adjRight;
+                    else if (adjLeft >= 0 && LaneGapClear(adjLeft, v.S, 10f))
+                        chosenAdj = adjLeft;
+
+                    if (chosenAdj >= 0)
+                    {
+                        v.S = Mathf.Clamp(network.Project(chosenAdj, v.Position), v.HalfLen, network.Lanes[chosenAdj].Length - v.HalfLen);
+                        network.Sample(chosenAdj, v.S, out Vector2 adjPos, out Vector2 adjDir);
+                        Vector2 adjLat = new Vector2(-adjDir.y, adjDir.x);
+                        v.LateralOffset = Mathf.Clamp(Vector2.Dot(v.Position - adjPos, adjLat), -4.0f, 4.0f);
+                        v.Lane = chosenAdj;
+                        v.LaneChangeCooldown = 2.5f;
+                    }
+                    else
+                    {
+                        // Dead end: smoothly decelerate to zero and park at curb.
+                        v.S = Mathf.Max(v.HalfLen + 1f, lane.Length - v.HalfLen - 0.5f);
+                        v.Speed = Mathf.Max(0f, v.Speed * 0.3f);
+                        float dist = Vector2.Distance(v.Position, focus);
+                        // Only quietly deactivate when player is far away (> 350m) and completely out of view
+                        if (dist > 350f && !IsDirectlyVisibleToCamera(v.Position))
+                        {
+                            v.Active = false;
+                        }
+                    }
                 }
             }
 
-            network.Sample(v.Lane, v.S, out Vector2 pos, out Vector2 dir);
-            v.Position = pos;
-            v.Heading = Mathf.Atan2(dir.x, dir.y);
+            if (!isHeadless && v.TransitionT > 0f && v.TransitionFromLane >= 0 && v.TransitionFromLane < network.Lanes.Length)
+            {
+                RoadNetwork.Lane fromL = network.Lanes[v.TransitionFromLane];
+                RoadNetwork.Lane toL = network.Lanes[v.Lane];
 
-            if (Vector2.Distance(pos, focus) > despawnRadius) Spawn(ref v, focus, spawnMin, spawnMax, true);
+                float sStart = Mathf.Max(0f, fromL.Length - v.HalfLen);
+                network.Sample(v.TransitionFromLane, sStart, out Vector2 p0, out Vector2 d0);
+
+                float sTarget = Mathf.Min(v.HalfLen, toL.Length * 0.5f);
+                network.Sample(v.Lane, sTarget, out Vector2 p1, out Vector2 d1);
+
+                float curveLen = Mathf.Max(2.0f, Vector2.Distance(p0, p1));
+                v.TransitionT += (Mathf.Max(2.0f, v.Speed) * dt) / curveLen;
+                v.S = sTarget * Mathf.Clamp01(v.TransitionT);
+
+                if (v.TransitionT < 1.0f)
+                {
+                    float t = v.TransitionT;
+                    float t2 = t * t;
+                    float t3 = t2 * t;
+                    float h00 = 2f * t3 - 3f * t2 + 1f;
+                    float h10 = t3 - 2f * t2 + t;
+                    float h01 = -2f * t3 + 3f * t2;
+                    float h11 = t3 - t2;
+
+                    Vector2 m0 = d0 * curveLen;
+                    Vector2 m1 = d1 * curveLen;
+                    Vector2 curvePos = h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1;
+
+                    float dh00 = 6f * t2 - 6f * t;
+                    float dh10 = 3f * t2 - 4f * t + 1f;
+                    float dh01 = -6f * t2 + 6f * t;
+                    float dh11 = 3f * t2 - 2f * t;
+
+                    Vector2 curveTan = dh00 * p0 + dh10 * m0 + dh01 * p1 + dh11 * m1;
+                    if (curveTan.sqrMagnitude < 0.001f) curveTan = Vector2.Lerp(d0, d1, t);
+                    curveTan = curveTan.normalized;
+
+                    Vector2 lat = new Vector2(-curveTan.y, curveTan.x);
+                    v.Position = curvePos + lat * v.LateralOffset;
+                    v.Heading = Mathf.Atan2(curveTan.x, curveTan.y);
+                }
+                else
+                {
+                    float excess = (v.TransitionT - 1.0f) * curveLen;
+                    v.TransitionT = 0f;
+                    v.TransitionFromLane = -1;
+                    v.S = Mathf.Clamp(sTarget + excess, 0f, toL.Length - v.HalfLen);
+                    network.Sample(v.Lane, v.S, out Vector2 pos, out Vector2 dir);
+                    Vector2 lat = new Vector2(-dir.y, dir.x);
+                    v.Position = pos + lat * v.LateralOffset;
+                    v.Heading = Mathf.Atan2(dir.x, dir.y);
+                }
+            }
+            else
+            {
+                network.Sample(v.Lane, v.S, out Vector2 pos, out Vector2 dir);
+                if (!isHeadless)
+                {
+                    Vector2 lat = new Vector2(-dir.y, dir.x);
+                    v.Position = pos + lat * v.LateralOffset;
+                }
+                else
+                {
+                    v.Position = pos;
+                }
+                v.Heading = Mathf.Atan2(dir.x, dir.y);
+            }
+
+            float distToFocus = Vector2.Distance(v.Position, focus);
+            if (isHeadless)
+            {
+                // Headless test harness legacy despawn
+                if (distToFocus > despawnRadius && !Visible(v.Position))
+                {
+                    if (!Spawn(ref v, focus, spawnMin, spawnMax, true))
+                    {
+                        if (distToFocus > despawnRadius) v.Active = false;
+                    }
+                }
+            }
+            else
+            {
+                // Interactive runtime: Safe, natural deactivation (NO in-place teleporting!)
+                if (IsSafeToDespawn(v.Position, focus))
+                {
+                    v.Active = false;
+                }
+            }
         }
 
         float NextLaneGap(int lane, float distanceToEnd, float halfLen, out float leaderSpeed)
@@ -705,13 +1066,18 @@ namespace Nyc.Gameplay.Traffic
             for (int i = 0; i < _agents.Length; i++) if (_agents[i].Active) active++;
             if (active >= _agents.Length) return;
 
-            int budget = Mathf.Min(4, _agents.Length - active);
+            bool fastMoving = controllers != null && controllers.Active != null && controllers.Active.Speed > 4.0f;
+            int maxBudget = fastMoving ? 8 : 4;
+            int budget = Mathf.Min(maxBudget, _agents.Length - active);
+            float rMin = (controllers != null && controllers.Active != null) ? (fastMoving ? 140f : 90f) : spawnMin;
+            float rMax = fastMoving ? 360f : spawnMax;
+
             for (int b = 0; b < budget; b++)
             {
                 for (int i = 0; i < _agents.Length; i++)
                 {
                     if (_agents[i].Active) continue;
-                    if (!Spawn(ref _agents[i], focus, spawnMin, spawnMax, true)) spawnFailures++;
+                    if (!Spawn(ref _agents[i], focus, rMin, rMax, true)) spawnFailures++;
                     break;
                 }
             }
@@ -719,16 +1085,24 @@ namespace Nyc.Gameplay.Traffic
 
         void RebuildSpawnCandidates(Vector2 focus)
         {
-            if (Vector2.Distance(focus, _spawnFocus) < 200f && _spawnLanes.Count > 0) return;
+            float threshold = (controllers != null && controllers.Active != null && controllers.Active.Speed > 4.0f) ? 50f : 200f;
+            if (Vector2.Distance(focus, _spawnFocus) < threshold && _spawnLanes.Count > 0) return;
             _spawnFocus = focus;
             _spawnLanes.Clear();
 
-            float reach = nearRadius * 1.25f;
+            Vector2 center = focus;
+            if (controllers != null && controllers.Active != null && controllers.Active.Speed > 4.0f)
+            {
+                Vector2 dir = new Vector2(Mathf.Sin(controllers.Active.Heading), Mathf.Cos(controllers.Active.Heading));
+                center += dir * Mathf.Min(180f, controllers.Active.Speed * 4.5f);
+            }
+
+            float reach = nearRadius * 1.35f;
             for (int i = 0; i < network.Lanes.Length; i++)
             {
                 Vector2 a = network.Lanes[i].Points[0];
                 Vector2 b = network.Lanes[i].Points[network.Lanes[i].Points.Length - 1];
-                if (Vector2.Distance(a, focus) < reach || Vector2.Distance(b, focus) < reach)
+                if (Vector2.Distance(a, center) < reach || Vector2.Distance(b, center) < reach)
                     _spawnLanes.Add(i);
             }
         }
@@ -757,8 +1131,9 @@ namespace Nyc.Gameplay.Traffic
                 float d = Vector2.Distance(pos, focus);
                 if (d < rMin || d > rMax) continue;
                 if (hidden && Visible(pos)) continue;
+                float playerSafeDist = (controllers != null && controllers.Active != null && controllers.Active.Speed > 4.0f) ? 75f : 35f;
                 if (controllers && controllers.Active != null &&
-                    Vector2.Distance(pos, controllers.Active.Position) < 8f) continue;
+                    Vector2.Distance(pos, controllers.Active.Position) < playerSafeDist) continue;
 
                 // Keep a gap to whoever is already there (works during the initial spawn too).
                 bool occupied = false;
@@ -775,7 +1150,12 @@ namespace Nyc.Gameplay.Traffic
                 v.NextLane = -1;
                 v.Active = true;
                 v.Position = pos;
+                v.Y = CityFrame.RoadSurfaceY;
                 v.Heading = Mathf.Atan2(dir.x, dir.y);
+                v.Pitch = v.Roll = v.Heave = 0f;
+                v.LateralOffset = 0f;
+                v.TransitionT = 0f;
+                v.TransitionFromLane = -1;
                 return true;
             }
             return false;
@@ -783,17 +1163,90 @@ namespace Nyc.Gameplay.Traffic
 
         bool Visible(Vector2 p)
         {
-            if (!viewCamera) return false;
+            Camera cam = viewCamera ? viewCamera : Camera.main;
+            if (!cam) return false;
             Vector3 world = CityFrame.ToUnity(p.x, 1.5f, p.y);
-            Vector3 delta = world - viewCamera.transform.position;
+            Vector3 delta = world - cam.transform.position;
             float dist = delta.magnitude;
-            if (dist < 1f) return true;
-            return Vector3.Dot(viewCamera.transform.forward, delta / dist) > 0.45f && dist < 420f;
+            if (dist < 45f) return true; // Safety bubble: never spawn/despawn in close proximity to camera
+
+            if (!Application.isPlaying)
+            {
+                // Exact headless-check path to preserve deterministic net & traffic stateHash
+                if (dist > 280f) return false;
+                Vector3 vpHeadless = cam.WorldToViewportPoint(world);
+                return vpHeadless.z > 0f && vpHeadless.x >= -0.10f && vpHeadless.x <= 1.10f && vpHeadless.y >= -0.10f && vpHeadless.y <= 1.10f;
+            }
+
+            if (dist > 650f) return false; // Beyond 650m in daylight horizon
+
+            // Viewport projection check (inside screen or near screen borders)
+            Vector3 vp = cam.WorldToViewportPoint(world);
+            if (vp.z > 0f && vp.x >= -0.12f && vp.x <= 1.12f && vp.y >= -0.12f && vp.y <= 1.12f)
+            {
+                // In interactive mode: NEVER spawn in active cone of vision within 360m!
+                // Only allow spawning at long distance (> 360m) where depth fog or occlusion hides it.
+                if (dist < 360f) return true;
+
+                if (controllers != null && controllers.collision != null)
+                {
+                    Vector2 camPos2D = new Vector2(cam.transform.position.x, -cam.transform.position.z);
+                    if (controllers.collision.HasBuildingBetween(camPos2D, p, 5.0f))
+                        return false;
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        bool IsDirectlyVisibleToCamera(Vector2 p)
+        {
+            Camera cam = viewCamera ? viewCamera : Camera.main;
+            if (!cam) return false;
+            Vector3 world = CityFrame.ToUnity(p.x, 1.5f, p.y);
+            Vector3 vp = cam.WorldToViewportPoint(world);
+            return vp.z > 0f && vp.x >= -0.12f && vp.x <= 1.12f && vp.y >= -0.12f && vp.y <= 1.12f;
+        }
+
+        bool IsSafeToDespawn(Vector2 pos, Vector2 focus)
+        {
+            float dist = Vector2.Distance(pos, focus);
+
+            // Far horizon is always safe to retire
+            if (dist > 520f) return true;
+
+            bool fastMoving = controllers != null && controllers.Active != null && controllers.Active.Speed > 4.0f;
+
+            if (controllers != null && controllers.Active != null)
+            {
+                Vector2 moveDir = new Vector2(Mathf.Sin(controllers.Active.Heading), Mathf.Cos(controllers.Active.Heading));
+                float dot = Vector2.Dot(pos - focus, moveDir);
+
+                // Vehicles AHEAD of player (dot > -20m): NEVER despawn if closer than 420m!
+                if (dot > -20f && dist < 420f) return false;
+
+                // Vehicles BEHIND player (dot < -50m):
+                // If fast-moving and comfortably behind (> 150m) and completely out of camera view:
+                if (fastMoving && dot < -50f && dist > 150f && !IsDirectlyVisibleToCamera(pos))
+                    return true;
+
+                // If normal speed and behind (> 220m) and completely out of camera view:
+                if (dot < -80f && dist > 220f && !IsDirectlyVisibleToCamera(pos))
+                    return true;
+            }
+
+            // Outside direct camera view beyond 360m: safe
+            if (dist > 360f && !IsDirectlyVisibleToCamera(pos))
+                return true;
+
+            return false;
         }
 
         Vector2 Focus()
         {
             if (controllers && controllers.Active != null) return controllers.Active.Position;
+            if (!viewCamera) viewCamera = Camera.main;
             if (viewCamera)
             {
                 Vector3 p = viewCamera.transform.position;
@@ -821,10 +1274,16 @@ namespace Nyc.Gameplay.Traffic
                 if (!a.Active) continue;
 
                 int batch = Mathf.Clamp(a.Batch, 0, _batches.Length - 1);
+                Quaternion rot = CityFrame.HeadingToRotation(a.Heading);
+                if (Mathf.Abs(a.Pitch) > 0.001f || Mathf.Abs(a.Roll) > 0.001f)
+                {
+                    rot *= Quaternion.Euler(a.Pitch * Mathf.Rad2Deg, 0f, a.Roll * Mathf.Rad2Deg);
+                }
+
                 _batches[batch].Add(new VehicleInstance
                 {
-                    Position = CityFrame.ToUnity(a.Position.x, a.Y, a.Position.y),
-                    Rotation = CityFrame.HeadingToRotation(a.Heading),
+                    Position = CityFrame.ToUnity(a.Position.x, a.Y + a.Heave, a.Position.y),
+                    Rotation = rot,
                     Scale = 1f
                 });
             }

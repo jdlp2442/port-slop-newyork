@@ -51,6 +51,7 @@ const times = ['midday', 'golden', 'twilight', 'midnight'];
 server.listen(PORT, async () => {
   console.log(`[ThreeJS Server] Serving at http://localhost:${PORT}`);
 
+  const captured = [];
   for (const loc of locations) {
     for (const time of times) {
       const fileName = `${loc}_${time}.png`;
@@ -61,8 +62,20 @@ server.listen(PORT, async () => {
       await new Promise((resolve) => {
         const proc = spawn(CHROME_PATH, [
           '--headless=new',
+          '--no-sandbox',
+          '--disable-gpu-sandbox',
           '--enable-unsafe-webgpu',
-          '--virtual-time-budget=6500',
+          // Headless machines have no GPU: WebGPU needs a software adapter. Without these
+          // flags adapter acquisition fails and every capture is the loading screen.
+          '--enable-unsafe-swiftshader',
+          '--enable-features=Vulkan',
+          '--use-angle=swiftshader',
+          '--use-vulkan=swiftshader',
+          '--force-device-scale-factor=1',
+          // WebGPU shader compilation on the full city can exceed six seconds on a cold
+          // cache; SwiftShader adds software-rasterisation time on top. Keep the capture
+          // deterministic but allow the scene to reach its first rendered frame.
+          '--virtual-time-budget=45000',
           '--hide-scrollbars',
           '--window-size=1280,720',
           `--screenshot=${outFile}`,
@@ -75,9 +88,23 @@ server.listen(PORT, async () => {
           resolve();
         });
       });
+      const bytes = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
+      console.log(`[ThreeJS Capture] ${fileName}: ${(bytes / 1024).toFixed(0)} KB`);
+      captured.push({ fileName, bytes });
     }
   }
 
   console.log('[ThreeJS Capture] All screenshots completed.');
+
+  // A failed WebGPU init leaves the loading overlay on screen: every PNG then has nearly the
+  // same byte size. Warn loudly so failed runs are never mistaken for parity evidence.
+  const suspicious = captured.filter(c => c.bytes > 0 &&
+    Math.abs(c.bytes - captured[0].bytes) < 2048).length;
+  if (captured.length > 4 && suspicious > captured.length / 2) {
+    console.warn(`[ThreeJS Capture] WARNING: ${suspicious}/${captured.length} captures share ` +
+      `the same size (${(captured[0].bytes / 1024).toFixed(0)} KB) — WebGPU likely never ` +
+      'initialised and these are loading screens, not rendered frames.');
+  }
+
   server.close();
 });

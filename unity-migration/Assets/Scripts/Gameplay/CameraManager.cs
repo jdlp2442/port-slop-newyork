@@ -67,8 +67,10 @@ namespace Nyc.Gameplay
             if (!cam) cam = Camera.main;
             if (cam)
             {
-                cam.nearClipPlane = 0.35f;
-                cam.farClipPlane = 60000f;
+                cam.nearClipPlane = 0.5f;
+                cam.farClipPlane = 16000f;
+                if (FindAnyObjectByType<AudioListener>() == null)
+                    cam.gameObject.AddComponent<AudioListener>();
             }
             if (!controllers) controllers = FindAnyObjectByType<ThirdPersonControllerManager>();
         }
@@ -180,7 +182,9 @@ namespace Nyc.Gameplay
                     float fwd = 0.35f, eyeY = 1.68f;
                     if (ent.Mode == TravelMode.Car) { fwd = 0.55f; eyeY = 1.52f; }
                     else if (ent.Mode == TravelMode.Cyclist) { fwd = 0.35f; eyeY = 1.55f; }
-                    else if (ent.Mode == TravelMode.Helicopter) { fwd = 1.65f; eyeY = 1.65f; }
+                    // The drone POV is an onboard cockpit camera. Keep it close to the
+                    // fuselage so the two weapon mounts and their aim remain readable.
+                    else if (ent.Mode == TravelMode.Helicopter) { fwd = 0.62f; eyeY = 1.48f; }
 
                     dp = new Vector3(p.x + Mathf.Sin(ent.Heading) * fwd, y + eyeY,
                                      p.y + Mathf.Cos(ent.Heading) * fwd);
@@ -315,6 +319,11 @@ namespace Nyc.Gameplay
         void HandlePointer(float dt)
         {
 #if ENABLE_INPUT_SYSTEM
+            // In drone POV the mouse belongs to the linked weapon sights. Do not also orbit
+            // the camera with the same delta: that was the source of the trailer's camera jitter.
+            if (controllers != null && controllers.ActiveMode == TravelMode.Helicopter && activePresetId == "pov")
+                return;
+
             Mouse mouse = Mouse.current;
             if (mouse != null)
             {

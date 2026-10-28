@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using Nyc.Core;
+using Nyc.Gameplay.Traffic;
 
 namespace Nyc.Gameplay
 {
@@ -15,6 +16,7 @@ namespace Nyc.Gameplay
         public PlayerInputReader input;
         public CollisionWorld collision;
         public TeleportService teleport;
+        public TrafficSystem trafficSystem;
 
         [Header("Entities")]
         public PedestrianController person;
@@ -33,19 +35,24 @@ namespace Nyc.Gameplay
 
         public TravelMode ActiveMode { get; private set; } = TravelMode.Car;
         public TravelController Active => Resolve(ActiveMode);
+        public bool IsReady => _ready && _ctx != null && _all != null;
         public event Action<TravelMode> ModeChanged;
         public event Action Teleported;
 
-        ControllerContext _ctx;
-        TravelController[] _all;
-        bool _ready;
+        [System.NonSerialized] ControllerContext _ctx;
+        [System.NonSerialized] TravelController[] _all;
+        [System.NonSerialized] bool _ready;
         float _simulationAccumulator;
         const float SimulationStep = 1f / 60f;
 
         // ------------------------------------------------------------------ lifecycle
 
-        void Awake()
+        void Awake() => EnsureInitialized();
+
+        public void EnsureInitialized()
         {
+            if (_ready && _ctx != null && _all != null) return;
+
             if (!person) person = GetComponentInChildren<PedestrianController>(true);
             if (!car) car = GetComponentInChildren<CarController>(true);
             if (!bike) bike = GetComponentInChildren<BikeController>(true);
@@ -53,6 +60,16 @@ namespace Nyc.Gameplay
             if (!input) input = GetComponentInChildren<PlayerInputReader>(true);
             if (!collision) collision = FindAnyObjectByType<CollisionWorld>();
             if (!teleport) teleport = GetComponentInChildren<TeleportService>(true);
+            if (!trafficSystem) trafficSystem = FindAnyObjectByType<TrafficSystem>();
+            // The playable scene has no TeleportService object: without this the safe-teleport
+            // lookup silently no-ops (TryFindSafe never runs) and every TeleportTo keeps the
+            // player where it was. Create and wire it on demand.
+            if (!teleport) teleport = gameObject.AddComponent<TeleportService>();
+            if (teleport)
+            {
+                if (!teleport.collision) teleport.collision = collision;
+                if (!teleport.manager) teleport.manager = this;
+            }
 
             _all = new[] { (TravelController)person, car, bike, helicopter };
 
@@ -66,13 +83,17 @@ namespace Nyc.Gameplay
             if (collision && CityConfig.Ready && CityConfig.Geo?.Manhattan != null)
                 collision.SetIslandBounds(IslandBoundsFromGeo());
 
-            SpawnAll();
-            SetMode(startMode);
-            _ready = true;
+            if (!_ready)
+            {
+                SpawnAll();
+                SetMode(startMode);
+                _ready = true;
+            }
         }
 
         void Update()
         {
+            EnsureInitialized();
             if (!_ready) return;
             _simulationAccumulator += Mathf.Min(Time.deltaTime, 0.10f);
             int steps = 0;
@@ -94,6 +115,7 @@ namespace Nyc.Gameplay
 
         public void Tick(float dt)
         {
+            if (!_ready || _ctx == null || _all == null) return;
             _ctx.Elapsed += dt;
 
             if (_all != null)
@@ -132,10 +154,20 @@ namespace Nyc.Gameplay
             Vector4 cp = CityConfig.CentralParkBounds;
             if (x > cp.x && x < cp.y && z > cp.z && z < cp.w) return centralParkGroundY;
 
-            if (mode == TravelMode.Person)
-                return CitySpatialIndex.IsOnSidewalk(x, z) ? sidewalkHeight : 0f;
+            float baseGround = (mode == TravelMode.Person && CitySpatialIndex.IsOnSidewalk(x, z)) ? sidewalkHeight : 0f;
 
-            return 0f;
+            // Rooftop surface support: if atop or falling onto a building or elevated deck, floor is the solid roof
+            if (collision != null && mode != TravelMode.Helicopter)
+            {
+                float currentH = (person != null && mode == TravelMode.Person) ? person.Height :
+                                (car != null && mode == TravelMode.Car) ? car.Height :
+                                (bike != null && mode == TravelMode.Cyclist) ? bike.Height : 0f;
+                float roofY = collision.GetRoofHeight(x, z, currentH, mode == TravelMode.Person ? 0.45f : 1.2f);
+                if (roofY > 1.8f && currentH >= roofY - 2.5f)
+                    return roofY;
+            }
+
+            return baseGround;
         }
 
         /// <summary>Port of the island / shoreline clamp at the top of resolveHorizontalCollision.</summary>

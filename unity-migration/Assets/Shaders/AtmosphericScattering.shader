@@ -30,11 +30,13 @@ Shader "Hidden/Nyc/AtmosphericScattering"
             SAMPLER(sampler_MainTex);
 
             CBUFFER_START(UnityPerMaterial)
-                float4 _FogParams;      // x: fogDensity, y: heightFalloff, z: startDistance, w: maxDistance
+                float4 _FogParams;      // x: fogDensity, y: fogHeight (900m), z: startDistance, w: maxDistance
                 float4 _SunDir;         // xyz: sun direction, w: sunIntensity
                 float4 _SunColor;       // rgb: sun color, a: nightFactor
-                float4 _HazeColor;      // rgb: haze color, a: inscatteringBoost
+                float4 _HazeColor;      // rgb: horizon fog color, a: inscatteringBoost
             CBUFFER_END
+            float4 _NycSkyTopColor;
+            float4 _NycSkyHorizonColor;
 
             // Rayleigh phase function: P(theta) = 3/(16*PI) * (1 + cos^2(theta))
             float RayleighPhase(float cosTheta)
@@ -63,7 +65,7 @@ Shader "Hidden/Nyc/AtmosphericScattering"
                     float rawDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, SampleSceneDepth(uv));
                 #endif
 
-                // Sky background: keep original skybox unless atmospheric haze softly blankets the horizon
+                // Sky background: keep original skybox
                 float linearDepth = LinearEyeDepth(rawDepth, _ZBufferParams);
                 if (rawDepth <= 0.00001 || linearDepth > 55000.0)
                 {
@@ -72,40 +74,34 @@ Shader "Hidden/Nyc/AtmosphericScattering"
 
                 float3 positionWS = ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
                 float3 cameraPosWS = _WorldSpaceCameraPos;
-                float3 ray = positionWS - cameraPosWS;
-                float rayDistance = length(ray);
-                float3 rayDir = ray / max(rayDistance, 0.001);
+                float3 toFrag = positionWS - cameraPosWS;
+                float dist = length(toFrag);
+                float3 dir = toFrag / max(dist, 0.001);
 
-                // Density height integration: rho(y) = rho0 * exp(-falloff * max(y, 0))
-                float density = _FogParams.x;
-                float falloff = max(_FogParams.y, 0.0001);
-                float startDist = _FogParams.z;
-                float maxDist = _FogParams.w;
+                // Exact port of createAerialFogNode() from js/lighting.js:
+                // Mean haze density exp(-y / H) along the ray between fragment and camera
+                float H = max(_FogParams.y, 100.0);
+                float ya = max(positionWS.y, 0.0);
+                float yb = max(cameraPosWS.y, 0.0);
+                float dy = yb - ya;
+                float ea = exp(-ya / H);
+                float eb = exp(-yb / H);
+                float meanDensity = abs(dy) > 1.0 ? (ea - eb) * H / dy : ea;
 
-                float effectiveDist = clamp(rayDistance - startDist, 0.0, maxDist);
-                float h0 = max(cameraPosWS.y, 0.0);
-                float h1 = max(positionWS.y, 0.0);
-                float avgH = (h0 + h1) * 0.5;
+                float tau = _FogParams.x * dist * meanDensity;
+                float extinction = saturate(1.0 - exp(-(tau * tau)));
 
-                // Optical depth along line of sight
-                float heightAtten = exp(-avgH * falloff);
-                float opticalDepth = density * effectiveDist * heightAtten;
-                float extinction = saturate(1.0 - exp(-opticalDepth));
+                // Sky-matched horizon color in view direction + subtle solar Mie forward scatter
+                float3 horizonCol = length(_NycSkyHorizonColor.rgb) > 0.001 ? _NycSkyHorizonColor.rgb : _HazeColor.rgb;
+                float3 topCol = length(_NycSkyTopColor.rgb) > 0.001 ? _NycSkyTopColor.rgb : horizonCol * 0.5;
+                float elev = saturate(max(dir.y, 0.015) * 2.5);
+                float3 skyColor = lerp(horizonCol, topCol, elev);
 
-                // Sun inscattering
-                float cosTheta = dot(rayDir, normalize(_SunDir.xyz));
-                float rPhase = RayleighPhase(cosTheta);
-                float mPhase = HenyeyGreensteinPhase(cosTheta, 0.76);
+                float cosTheta = dot(dir, normalize(_SunDir.xyz));
+                float sunGlow = pow(max(cosTheta, 0.0), 8.0) * 0.35 * (1.0 - _SunColor.a);
+                skyColor = lerp(skyColor, _HazeColor.rgb, 0.35) + _SunColor.rgb * sunGlow;
 
-                float night = _SunColor.a;
-                float3 sunRadiance = _SunColor.rgb * _SunDir.w;
-                float3 inscatter = (_HazeColor.rgb * rPhase + sunRadiance * mPhase * 0.35) * _HazeColor.a;
-
-                // Night haze shift toward deep blue/grey city glow
-                float3 nightHaze = float3(0.04, 0.06, 0.11) * (1.0 - exp(-rayDistance * 0.0008));
-                inscatter = lerp(inscatter, nightHaze, night);
-
-                float3 result = lerp(sceneColor.rgb, inscatter, extinction);
+                float3 result = lerp(sceneColor.rgb, skyColor, extinction);
                 return float4(result, sceneColor.a);
             }
             ENDHLSL

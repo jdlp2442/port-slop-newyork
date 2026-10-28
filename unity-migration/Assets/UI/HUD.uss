@@ -24,6 +24,104 @@
 .bottom-center { left: 0; right: 0; bottom: 20px; align-items: center; }
 .bottom-right { right: 20px; bottom: 20px; align-items: flex-end; }
 
+/* ------------------------------------------------------------------ drone POV hub */
+
+.drone-pov-hub {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: none;
+    -unity-background-image-tint-color: rgba(0, 0, 0, 0);
+}
+
+.drone-hub-title {
+    position: absolute;
+    top: 24px;
+    left: 0;
+    right: 0;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    -unity-font-style: bold;
+    letter-spacing: 1.5px;
+    color: rgba(255, 194, 26, 0.92);
+}
+
+.drone-hub-hint {
+    position: absolute;
+    top: 44px;
+    left: 0;
+    right: 0;
+    -unity-text-align: middle-center;
+    font-size: 10px;
+    color: rgba(246, 245, 242, 0.62);
+}
+
+.drone-hub-status {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 112px;
+    -unity-text-align: middle-center;
+    font-size: 10px;
+    -unity-font-style: bold;
+    letter-spacing: 0.7px;
+    color: rgba(246, 245, 242, 0.72);
+}
+
+.drone-reticle {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-width: 2px;
+    border-radius: 24px;
+    background-color: rgba(8, 12, 16, 0.12);
+    -unity-background-image-tint-color: rgba(0, 0, 0, 0);
+}
+
+.drone-reticle-cross {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 9px;
+    bottom: 0;
+    -unity-text-align: middle-center;
+    font-size: 21px;
+    -unity-font-style: bold;
+}
+
+.drone-reticle-left {
+    border-color: rgba(255, 194, 26, 0.92);
+}
+
+.drone-reticle-left .drone-reticle-cross {
+    color: rgba(255, 194, 26, 0.92);
+}
+
+.drone-reticle-right {
+    border-color: rgba(99, 207, 255, 0.94);
+}
+
+.drone-reticle-right .drone-reticle-cross {
+    color: rgba(99, 207, 255, 0.94);
+}
+
+.drone-reticle-label {
+    position: absolute;
+    left: 56px;
+    top: 12px;
+    width: 90px;
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(246, 245, 242, 0.78);
+}
+
+.drone-reticle-right .drone-reticle-label {
+    left: -102px;
+    -unity-text-align: middle-right;
+}
+
 /* ------------------------------------------------------------------ glass panel */
 
 .panel {

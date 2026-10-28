@@ -57,6 +57,37 @@ namespace Nyc.Gameplay
     }
 
     /// <summary>
+    /// Runtime animator driver for high-fidelity rigged pedestrian characters (e.g. CityPeople prefabs).
+    /// Switches between idle, walking, and jogging states based on speed and boost.
+    /// </summary>
+    public sealed class PedestrianAnimatorDriver : MonoBehaviour
+    {
+        public PedestrianController controller;
+        public Animator animator;
+
+        void Update()
+        {
+            if (!controller || !animator) return;
+            float speed = Mathf.Abs(controller.Speed);
+            if (speed < 0.15f)
+            {
+                animator.Play("idle_m_2_220f");
+                animator.speed = 1.0f;
+            }
+            else if (speed > 5.5f)
+            {
+                animator.Play("locom_m_jogging_30f");
+                animator.speed = Mathf.Clamp(speed / 6.0f, 0.8f, 1.5f);
+            }
+            else
+            {
+                animator.Play("locom_m_basicWalk_30f");
+                animator.speed = Mathf.Clamp(speed / 3.5f, 0.7f, 1.4f);
+            }
+        }
+    }
+
+    /// <summary>
     /// Procedural visual component for the cyclist and bicycle.
     /// Steers fork, leans frame into turns, rotates cranks/pedals and spins wheels.
     /// </summary>
@@ -100,9 +131,216 @@ namespace Nyc.Gameplay
         public Transform frontLeftWheel, frontRightWheel;
         public Transform rearLeftWheel, rearRightWheel;
 
+        public bool isWrecked;
+        private Material _burnedMat;
+        private Material _burnedGlassMat;
+        private MeshRenderer[] _bodyRenderers;
+        private Mesh _originalBodyMesh;
+        private Mesh _originalCabinMesh;
+
+        void OnEnable()
+        {
+            if (controller != null) controller.OnCarWrecked += HandleWrecked;
+        }
+
+        void OnDisable()
+        {
+            if (controller != null) controller.OnCarWrecked -= HandleWrecked;
+        }
+
+        void HandleWrecked(Vector3 pos, float impactSpeed)
+        {
+#if UNITY_EDITOR || UNITY_STANDALONE
+            Effects.NycVehicleExplosionManager.TriggerCrashExplosion(pos, impactSpeed, spawnStandaloneWreck: false);
+#endif
+            SetWrecked(true, impactSpeed);
+        }
+
+        public void SetWrecked(bool wrecked, float impactSpeed = 15f)
+        {
+            isWrecked = wrecked;
+            if (wrecked)
+            {
+                // 1. Procedural accordion crush and buckling deformation of CarBody
+                var bodyFilter = chassisRoot ? chassisRoot.Find("CarBody")?.GetComponent<MeshFilter>() : null;
+                if (bodyFilter != null && bodyFilter.sharedMesh != null)
+                {
+                    if (_originalBodyMesh == null) _originalBodyMesh = bodyFilter.sharedMesh;
+                    Mesh deformed = Instantiate(bodyFilter.sharedMesh);
+                    deformed.name = "WreckedCarBody";
+                    Vector3[] verts = deformed.vertices;
+                    for (int i = 0; i < verts.Length; i++)
+                    {
+                        Vector3 v = verts[i];
+                        if (v.z < 0.2f)
+                        {
+                            float t = Mathf.InverseLerp(0.2f, -2.35f, v.z);
+                            // Accordion compression along Z
+                            v.z += 0.65f * Mathf.Pow(t, 1.4f);
+
+                            // Hood buckling upwards with jagged creases
+                            if (v.y > 0.55f)
+                            {
+                                float hoodCenter = 1.0f - Mathf.Clamp01(Mathf.Abs(v.x) / 0.85f);
+                                float buckle = Mathf.Sin(t * Mathf.PI * 1.5f) * 0.35f * hoodCenter;
+                                float wrinkle = Mathf.Sin(v.x * 12.0f + v.z * 18.0f) * 0.06f * t;
+                                v.y += buckle + wrinkle;
+                            }
+                            else
+                            {
+                                v.y += 0.10f * t;
+                            }
+
+                            // Splay fender panels
+                            float flare = Mathf.Sin(v.z * 6.0f) * 0.08f * t;
+                            v.x += Mathf.Sign(v.x != 0f ? v.x : 1f) * flare;
+                        }
+                        verts[i] = v;
+                    }
+                    deformed.vertices = verts;
+                    deformed.RecalculateNormals();
+                    deformed.RecalculateBounds();
+                    bodyFilter.sharedMesh = deformed;
+                }
+
+                // 2. Procedural windshield collapse and roof crush of CarCabin
+                var cabinFilter = chassisRoot ? chassisRoot.Find("CarCabin")?.GetComponent<MeshFilter>() : null;
+                if (cabinFilter != null && cabinFilter.sharedMesh != null)
+                {
+                    if (_originalCabinMesh == null) _originalCabinMesh = cabinFilter.sharedMesh;
+                    Mesh deformed = Instantiate(cabinFilter.sharedMesh);
+                    deformed.name = "WreckedCarCabin";
+                    Vector3[] verts = deformed.vertices;
+                    for (int i = 0; i < verts.Length; i++)
+                    {
+                        Vector3 v = verts[i];
+                        if (v.z < 0.1f)
+                        {
+                            float t = Mathf.InverseLerp(0.1f, -1.7f, v.z);
+                            v.z += 0.38f * t;
+                            v.y -= 0.18f * t;
+                            float glassWrinkle = Mathf.Sin(v.x * 14f + v.z * 16f) * 0.04f * t;
+                            v.y += glassWrinkle;
+                        }
+                        verts[i] = v;
+                    }
+                    deformed.vertices = verts;
+                    deformed.RecalculateNormals();
+                    deformed.RecalculateBounds();
+                    cabinFilter.sharedMesh = deformed;
+                }
+
+                // 3. Broken Camber and Steering Damage on Wheels
+                if (frontLeftWheel)
+                {
+                    frontLeftWheel.localRotation = Quaternion.Euler(0f, -22f, 32f);
+                    frontLeftWheel.localPosition += new Vector3(-0.06f, 0.08f, 0.15f);
+                }
+                if (frontRightWheel)
+                {
+                    frontRightWheel.localRotation = Quaternion.Euler(0f, 15f, -26f);
+                    frontRightWheel.localPosition += new Vector3(-0.05f, 0.06f, 0.20f);
+                }
+                if (rearLeftWheel) rearLeftWheel.localRotation = Quaternion.Euler(0f, 0f, 4f);
+                if (rearRightWheel) rearRightWheel.localRotation = Quaternion.Euler(0f, 0f, -4f);
+
+                // 4. Detach / Hide severed components (front bumper, headlights, plates, mirrors, taxi sign)
+                var bumper = chassisRoot ? chassisRoot.Find("BumperFront") : null;
+                if (bumper) bumper.gameObject.SetActive(false);
+                var hlL = chassisRoot ? chassisRoot.Find("Headlight_L") : null;
+                if (hlL) hlL.gameObject.SetActive(false);
+                var hlR = chassisRoot ? chassisRoot.Find("Headlight_R") : null;
+                if (hlR) hlR.gameObject.SetActive(false);
+                var plF = chassisRoot ? chassisRoot.Find("PlateFront") : null;
+                if (plF) plF.gameObject.SetActive(false);
+                var mirL = chassisRoot ? chassisRoot.Find("Mirror_L") : null;
+                if (mirL) mirL.gameObject.SetActive(false);
+                var mirR = chassisRoot ? chassisRoot.Find("Mirror_R") : null;
+                if (mirR) mirR.gameObject.SetActive(false);
+                var sign = chassisRoot ? chassisRoot.Find("TaxiSign") : null;
+                if (sign) sign.gameObject.SetActive(false);
+                var signM = chassisRoot ? chassisRoot.Find("TaxiSignMount") : null;
+                if (signM) signM.gameObject.SetActive(false);
+
+                // 5. Charred Soot & Burnt Paint Materials
+                if (_burnedMat == null)
+                {
+                    Shader s = Shader.Find("Universal Render Pipeline/Lit");
+                    _burnedMat = new Material(s)
+                    {
+                        color = new Color(0.08f, 0.07f, 0.07f),
+                        name = "CarCharredPaint"
+                    };
+                    _burnedMat.SetFloat("_Smoothness", 0.04f);
+                    _burnedMat.SetFloat("_Metallic", 0.22f);
+                }
+                if (_burnedGlassMat == null)
+                {
+                    Shader s = Shader.Find("Universal Render Pipeline/Lit");
+                    _burnedGlassMat = new Material(s)
+                    {
+                        color = new Color(0.04f, 0.04f, 0.04f),
+                        name = "CarCrackedSootGlass"
+                    };
+                    _burnedGlassMat.SetFloat("_Smoothness", 0.02f);
+                }
+
+                if (chassisRoot)
+                {
+                    _bodyRenderers = chassisRoot.GetComponentsInChildren<MeshRenderer>(true);
+                    for (int i = 0; i < _bodyRenderers.Length; i++)
+                    {
+                        if (_bodyRenderers[i].gameObject.name == "CarCabin")
+                            _bodyRenderers[i].sharedMaterial = _burnedGlassMat;
+                        else
+                            _bodyRenderers[i].sharedMaterial = _burnedMat;
+                    }
+                }
+
+                // 6. Attach Burning Engine Fire & Volumetric Smoke Plume to the crumpled hood
+#if UNITY_EDITOR || UNITY_STANDALONE
+                if (chassisRoot)
+                {
+                    Effects.NycBurningCarWreck.AttachToVehicle(chassisRoot.gameObject, impactSpeed);
+                }
+#endif
+            }
+            else
+            {
+                // Restore original state if ever repaired
+                if (frontLeftWheel) { frontLeftWheel.gameObject.SetActive(true); frontLeftWheel.localRotation = Quaternion.Euler(0f, 0f, 0f); }
+                if (frontRightWheel) { frontRightWheel.localRotation = Quaternion.Euler(0f, 0f, 0f); }
+                if (rearLeftWheel) rearLeftWheel.localRotation = Quaternion.Euler(0f, 0f, 0f);
+                if (rearRightWheel) rearRightWheel.localRotation = Quaternion.Euler(0f, 0f, 0f);
+
+                var bumper = chassisRoot ? chassisRoot.Find("BumperFront") : null;
+                if (bumper) bumper.gameObject.SetActive(true);
+                var sign = chassisRoot ? chassisRoot.Find("TaxiSign") : null;
+                if (sign) sign.gameObject.SetActive(true);
+
+                var bodyFilter = chassisRoot ? chassisRoot.Find("CarBody")?.GetComponent<MeshFilter>() : null;
+                if (bodyFilter != null && _originalBodyMesh != null) bodyFilter.sharedMesh = _originalBodyMesh;
+
+                var cabinFilter = chassisRoot ? chassisRoot.Find("CarCabin")?.GetComponent<MeshFilter>() : null;
+                if (cabinFilter != null && _originalCabinMesh != null) cabinFilter.sharedMesh = _originalCabinMesh;
+            }
+        }
+
         void LateUpdate()
         {
             if (!controller) return;
+
+            if (isWrecked || controller.IsWrecked)
+            {
+                if (chassisRoot)
+                {
+                    float pitchDeg = (controller.ChassisPitch * Mathf.Rad2Deg) + 8.5f;
+                    float rollDeg = (-controller.ChassisRoll * Mathf.Rad2Deg) + 3.5f;
+                    chassisRoot.localPosition = new Vector3(0f, controller.HeaveY - 0.08f, 0f);
+                    chassisRoot.localRotation = Quaternion.Euler(pitchDeg, 0f, rollDeg);
+                }
+                return;
+            }
 
             // Suspension attitude (pitch under accel/brake, roll on turns, heave on bumps)
             if (chassisRoot)
@@ -118,12 +356,12 @@ namespace Nyc.Gameplay
             float spinDeg = -controller.WheelSpin * Mathf.Rad2Deg;
 
             if (frontLeftWheel)
-                frontLeftWheel.localRotation = Quaternion.Euler(0f, steerDeg, 0f) * Quaternion.Euler(spinDeg, 0f, 0f);
+                frontLeftWheel.localRotation = Quaternion.Euler(0f, 180f + steerDeg, 0f) * Quaternion.Euler(-spinDeg, 0f, 0f);
             if (frontRightWheel)
                 frontRightWheel.localRotation = Quaternion.Euler(0f, steerDeg, 0f) * Quaternion.Euler(spinDeg, 0f, 0f);
 
             // Rear wheels spin only
-            if (rearLeftWheel) rearLeftWheel.localRotation = Quaternion.Euler(spinDeg, 0f, 0f);
+            if (rearLeftWheel) rearLeftWheel.localRotation = Quaternion.Euler(0f, 180f, 0f) * Quaternion.Euler(-spinDeg, 0f, 0f);
             if (rearRightWheel) rearRightWheel.localRotation = Quaternion.Euler(spinDeg, 0f, 0f);
         }
     }
@@ -195,6 +433,25 @@ namespace Nyc.Gameplay
 
             var root = new GameObject("PedestrianModel");
             root.transform.SetParent(controller.transform, false);
+
+            // Check if high-fidelity 3D rigged humanoid pedestrian prefab is available in Resources
+            var pedPrefab = Resources.Load<GameObject>("Prefabs/Pedestrian");
+            if (pedPrefab != null)
+            {
+                var pedInstance = UnityEngine.Object.Instantiate(pedPrefab, root.transform, false);
+                pedInstance.name = "City_Pedestrian_PBR";
+                pedInstance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                pedInstance.transform.localPosition = Vector3.zero;
+
+                var anim = pedInstance.GetComponent<Animator>();
+                if (anim != null)
+                {
+                    var walkerDriver = pedInstance.AddComponent<PedestrianAnimatorDriver>();
+                    walkerDriver.controller = controller;
+                    walkerDriver.animator = anim;
+                }
+                return;
+            }
 
             var vis = root.AddComponent<PedestrianVisual>();
             vis.controller = controller;
@@ -354,7 +611,9 @@ namespace Nyc.Gameplay
             chassisGo.transform.SetParent(root.transform, false);
             vis.chassisRoot = chassisGo.transform;
 
-            Material paintMat = CreateMaterial("CarPaint", isTaxi ? new Color(1.0f, 0.745f, 0.08f) : new Color(0.85f, 0.12f, 0.15f), 0.85f, 0.25f);
+            // Web reference uses taxi paint #ffbe14 with roughness 0.24 / metalness 0.34.
+            // URP's smoothness is the inverse of roughness, so keep the same visual response here.
+            Material paintMat = CreateMaterial("CarPaint", isTaxi ? new Color(1.0f, 0.745f, 0.08f) : new Color(0.85f, 0.12f, 0.15f), 0.76f, 0.34f);
             Material glassMat = CreateMaterial("CarGlass", new Color(0.06f, 0.08f, 0.11f), 0.95f, 0.10f);
             Material wheelMat = CreateMaterial("CarWheel", new Color(0.12f, 0.12f, 0.14f), 0.25f, 0.0f);
             Material trimMat  = CreateMaterial("CarTrim", new Color(0.20f, 0.20f, 0.22f), 0.70f, 0.30f);
@@ -362,26 +621,49 @@ namespace Nyc.Gameplay
             Material taillightMat = CreateMaterial("CarTaillight", new Color(0.85f, 0.06f, 0.04f), 0.8f, 0f, new Color(2.0f, 0.15f, 0.1f));
 
             // Sculpted aerodynamic car body & raked cabin
-            AddMeshChild(chassisGo, "CarBody", CreateCarBodyMesh(isTaxi), paintMat);
-            AddMeshChild(chassisGo, "CarCabin", CreateCarCabinMesh(), glassMat);
+            // The web taxi is a lofted, rounded sedan (BODY_SPECS.taxi), not a stack of boxes.
+            // Use the same sectioned body/cabin construction for the controllable actor.
+            AddMeshChild(chassisGo, "CarBody", CreateTaxiLoftBodyMesh(), paintMat);
+            AddMeshChild(chassisGo, "CarCabin", CreateTaxiLoftCabinMesh(), glassMat);
 
             // Front and rear bumpers
             AddMeshChild(chassisGo, "BumperFront", CreateBoxMesh(1.72f, 0.26f, 0.16f), trimMat)
-                .transform.localPosition = new Vector3(0f, 0.45f, -2.18f);
+                .transform.localPosition = new Vector3(0f, 0.45f, -2.30f);
             AddMeshChild(chassisGo, "BumperRear", CreateBoxMesh(1.72f, 0.28f, 0.16f), trimMat)
-                .transform.localPosition = new Vector3(0f, 0.48f, 2.18f);
+                .transform.localPosition = new Vector3(0f, 0.48f, 2.30f);
 
             // Front Headlights
-            AddMeshChild(chassisGo, "Headlight_L", CreateBoxMesh(0.28f, 0.11f, 0.04f), headlightMat)
-                .transform.localPosition = new Vector3(-0.60f, 0.65f, -2.19f);
-            AddMeshChild(chassisGo, "Headlight_R", CreateBoxMesh(0.28f, 0.11f, 0.04f), headlightMat)
-                .transform.localPosition = new Vector3(0.60f, 0.65f, -2.19f);
+            AddMeshChild(chassisGo, "Headlight_L", CreateBoxMesh(0.40f, 0.12f, 0.04f), headlightMat)
+                .transform.localPosition = new Vector3(-0.56f, 0.86f, -2.38f);
+            AddMeshChild(chassisGo, "Headlight_R", CreateBoxMesh(0.40f, 0.12f, 0.04f), headlightMat)
+                .transform.localPosition = new Vector3(0.56f, 0.86f, -2.38f);
 
             // Rear Taillights
-            AddMeshChild(chassisGo, "Taillight_L", CreateBoxMesh(0.28f, 0.10f, 0.04f), taillightMat)
-                .transform.localPosition = new Vector3(-0.60f, 0.70f, 2.19f);
-            AddMeshChild(chassisGo, "Taillight_R", CreateBoxMesh(0.28f, 0.10f, 0.04f), taillightMat)
-                .transform.localPosition = new Vector3(0.60f, 0.70f, 2.19f);
+            AddMeshChild(chassisGo, "Taillight_L", CreateBoxMesh(0.46f, 0.14f, 0.05f), taillightMat)
+                .transform.localPosition = new Vector3(-0.585f, 0.98f, 2.39f);
+            AddMeshChild(chassisGo, "Taillight_R", CreateBoxMesh(0.46f, 0.14f, 0.05f), taillightMat)
+                .transform.localPosition = new Vector3(0.585f, 0.98f, 2.39f);
+
+            // NYC taxi identification details from the web actor: front/rear NY plates and
+            // the black-and-gold T&LC medallion on both front doors. These sit just off the
+            // body surface so they remain readable at the chase camera distance.
+            Material plateMat = CreateMaterial("TaxiPlate", new Color(0.92f, 0.84f, 0.48f), 0.36f, 0.35f);
+            AddMeshChild(chassisGo, "PlateFront", CreateBoxMesh(0.34f, 0.14f, 0.025f), plateMat)
+                .transform.localPosition = new Vector3(0f, 0.84f, -2.40f);
+            AddMeshChild(chassisGo, "PlateRear", CreateBoxMesh(0.34f, 0.14f, 0.025f), plateMat)
+                .transform.localPosition = new Vector3(0f, 0.84f, 2.40f);
+
+            if (isTaxi)
+            {
+                Material medallionMat = CreateMaterial("TaxiMedallion", new Color(0.08f, 0.06f, 0.035f), 0.48f, 0.22f,
+                    new Color(0.12f, 0.07f, 0.015f));
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var badge = AddMeshChild(chassisGo, side < 0 ? "DoorBadge_L" : "DoorBadge_R",
+                        CreateBoxMesh(0.025f, 0.22f, 0.42f), medallionMat);
+                    badge.transform.localPosition = new Vector3(side * 0.918f, 0.78f, -0.18f);
+                }
+            }
 
             // Side Mirrors
             AddMeshChild(chassisGo, "Mirror_L", CreateBoxMesh(0.14f, 0.08f, 0.10f), paintMat)
@@ -401,13 +683,13 @@ namespace Nyc.Gameplay
             // 4 Wheels
             float frontZ = -1.35f;
             float rearZ = 1.35f;
-            float halfX = 0.82f;
+            float halfX = 0.895f;
             float wheelY = 0.35f;
 
-            vis.frontLeftWheel = CreateWheelChild(root.transform, "Wheel_FL", new Vector3(-halfX, wheelY, frontZ), wheelMat);
-            vis.frontRightWheel = CreateWheelChild(root.transform, "Wheel_FR", new Vector3(halfX, wheelY, frontZ), wheelMat);
-            vis.rearLeftWheel = CreateWheelChild(root.transform, "Wheel_RL", new Vector3(-halfX, wheelY, rearZ), wheelMat);
-            vis.rearRightWheel = CreateWheelChild(root.transform, "Wheel_RR", new Vector3(halfX, wheelY, rearZ), wheelMat);
+            vis.frontLeftWheel = CreateWheelChild(root.transform, "Wheel_FL", new Vector3(-halfX, wheelY, frontZ), wheelMat, true);
+            vis.frontRightWheel = CreateWheelChild(root.transform, "Wheel_FR", new Vector3(halfX, wheelY, frontZ), wheelMat, false);
+            vis.rearLeftWheel = CreateWheelChild(root.transform, "Wheel_RL", new Vector3(-halfX, wheelY, rearZ), wheelMat, true);
+            vis.rearRightWheel = CreateWheelChild(root.transform, "Wheel_RR", new Vector3(halfX, wheelY, rearZ), wheelMat, false);
         }
 
         // =========================================================================================
@@ -417,6 +699,17 @@ namespace Nyc.Gameplay
         public static void BuildHelicopterActor(HelicopterController controller)
         {
             if (!controller) return;
+
+#if UNITY_EDITOR || UNITY_STANDALONE
+            if (!controller.GetComponent<Effects.AircraftWakeSource>())
+            {
+                var wake = controller.gameObject.AddComponent<Effects.AircraftWakeSource>();
+                wake.aircraftType = "Helicopter";
+                wake.rotorRadius = 5.2f;
+                wake.downwashStrength = 18.0f;
+                wake.carveRadius = 8.0f;
+            }
+#endif
 
             Transform existing = controller.transform.Find("HelicopterModel");
             if (existing) UnityEngine.Object.Destroy(existing.gameObject);
@@ -431,6 +724,25 @@ namespace Nyc.Gameplay
             var fuselageGo = new GameObject("FuselageRoot");
             fuselageGo.transform.SetParent(root.transform, false);
             vis.fuselageRoot = fuselageGo.transform;
+
+            // Check if high-fidelity 3D NYPD Helicopter prefab is available in Resources
+            var heliPrefab = Resources.Load<GameObject>("Prefabs/Helicopter");
+            if (heliPrefab != null)
+            {
+                var heliInstance = UnityEngine.Object.Instantiate(heliPrefab, fuselageGo.transform, false);
+                heliInstance.name = "NYPD_Helicopter_PBR";
+                // Rotate 180 deg around Y so +Z aligns with travel heading (-Z forward)
+                heliInstance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                heliInstance.transform.localPosition = new Vector3(0f, 0f, 0f);
+
+                // Wire up rotating rotors to HelicopterVisual for continuous high-RPM spin
+                Transform mainRotorTrans = heliInstance.transform.Find("Main_Rotor");
+                Transform tailRotorTrans = heliInstance.transform.Find("Tail_Rotor");
+                if (mainRotorTrans) vis.mainRotor = mainRotorTrans;
+                if (tailRotorTrans) vis.tailRotor = tailRotorTrans;
+                AttachDroneWeaponSystem(controller);
+                return;
+            }
 
             Material heliBodyMat = CreateMaterial("HeliBody", new Color(0.92f, 0.15f, 0.15f)); // NY sightseeing red
             Material heliGlassMat = CreateMaterial("HeliGlass", new Color(0.15f, 0.22f, 0.32f));
@@ -454,6 +766,16 @@ namespace Nyc.Gameplay
             tailRotorGo.transform.localPosition = new Vector3(0.18f, 1.45f, 4.85f);
             vis.tailRotor = tailRotorGo.transform;
             AddMeshChild(tailRotorGo, "TailRotorBlades", CreateTailRotorMesh(), heliMetalMat);
+            AttachDroneWeaponSystem(controller);
+        }
+
+        static void AttachDroneWeaponSystem(HelicopterController controller)
+        {
+            if (!controller) return;
+            var weapons = controller.GetComponent<DroneWeaponSystem>();
+            if (!weapons) weapons = controller.gameObject.AddComponent<DroneWeaponSystem>();
+            weapons.controller = controller;
+            if (!weapons.cameras) weapons.cameras = UnityEngine.Object.FindAnyObjectByType<CameraManager>();
         }
 
         // =========================================================================================
@@ -610,6 +932,172 @@ namespace Nyc.Gameplay
             mesh.SetNormals(n);
             SetAllUVs(mesh, u, v.Count);
             mesh.SetTriangles(t, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Faithful taxi loft port (actor-models.js BODY_SPECS.taxi / buildCarGeometry)
+        // ---------------------------------------------------------------------------------
+
+        static Mesh CreateTaxiLoftBodyMesh()
+        {
+            var sections = new List<List<Vector3>>(28);
+            for (int i = 0; i <= 24; i++)
+            {
+                float zWeb = Mathf.Lerp(-2.25f, 2.25f, i / 24f);
+                TaxiBodySample(zWeb, out float w, out float yB, out float yS, out float yE, out float yT, out float xE);
+                float xB = w - 0.075f;
+                var right = new List<Vector2>(12);
+                for (int k = 0; k <= 4; k++)
+                {
+                    float a = (k / 4f) * Mathf.PI * 0.5f;
+                    float sn = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(a)), 2f / 2.8f);
+                    float cs = Mathf.Pow(Mathf.Max(0f, Mathf.Cos(a)), 2f / 2.8f);
+                    right.Add(new Vector2(xB + (w - xB) * sn, yS - (yS - yB) * cs));
+                }
+                for (int k = 1; k <= 3; k++)
+                {
+                    float a = (k / 4f) * Mathf.PI * 0.5f;
+                    float sn = Mathf.Pow(Mathf.Max(0f, Mathf.Sin(a)), 2f / 3.2f);
+                    float cs = Mathf.Pow(Mathf.Max(0f, Mathf.Cos(a)), 2f / 3.2f);
+                    right.Add(new Vector2(xE + (w - xE) * cs, yS + (yE - yS) * sn));
+                }
+                right.Add(new Vector2(xE * 0.66f, yE + (yT - yE) * 0.56f));
+                right.Add(new Vector2(xE * 0.33f, yE + (yT - yE) * 0.89f));
+                right.Add(new Vector2(0f, yT));
+                sections.Add(MirrorTaxiSection(right, -zWeb));
+            }
+            return BuildTaxiLoftMesh(sections, "TaxiLoftBody", true);
+        }
+
+        static Mesh CreateTaxiLoftCabinMesh()
+        {
+            var sections = new List<List<Vector3>>(16);
+            float[] stations = { -1.68f, -1.48f, -1.25f, -1.0f, -0.72f, -0.42f, -0.16f, 0f, 0.22f, 0.46f, 0.68f, 0.86f };
+            for (int i = 0; i < stations.Length; i++)
+            {
+                float z = stations[i];
+                TaxiBodySample(z, out float w, out _, out _, out float yE, out _, out float xE);
+                float beltX = xE - 0.035f;
+                float beltY = yE - 0.004f;
+                float railX, railY, h;
+                if (z >= 0f)
+                {
+                    float t = Mathf.Clamp01((0.86f - z) / 0.86f);
+                    railX = Mathf.Lerp(beltX, 0.645f, t);
+                    railY = Mathf.Lerp(beltY, 1.35f, t);
+                    h = Mathf.Lerp(0.05f, 0.085f, t);
+                }
+                else if (z >= -1f)
+                {
+                    float t = Mathf.Clamp01(-z);
+                    railX = Mathf.Lerp(0.645f, 0.625f, t);
+                    railY = 1.435f;
+                    h = 0.085f;
+                }
+                else
+                {
+                    float t = Mathf.Clamp01((z + 1.68f) / 0.68f);
+                    railX = Mathf.Lerp(beltX, 0.625f, t);
+                    railY = Mathf.Lerp(beltY, 1.435f, t);
+                    h = Mathf.Lerp(0.05f, 0.085f, t);
+                }
+
+                var right = new List<Vector2>(9) { new Vector2(beltX, beltY),
+                    new Vector2(Mathf.Lerp(beltX, railX, 0.34f), Mathf.Lerp(beltY, railY, 0.34f)),
+                    new Vector2(Mathf.Lerp(beltX, railX, 0.68f), Mathf.Lerp(beltY, railY, 0.68f)),
+                    new Vector2(railX, railY) };
+                for (int k = 1; k <= 3; k++)
+                {
+                    float f = k / 4f;
+                    float a = f * Mathf.PI * 0.5f;
+                    right.Add(new Vector2(railX * Mathf.Pow(Mathf.Max(0f, Mathf.Cos(a)), 2f / 4f),
+                        railY + h * Mathf.Pow(Mathf.Max(0f, Mathf.Sin(a)), 2f / 4f)));
+                }
+                right.Add(new Vector2(0f, railY + h));
+                sections.Add(MirrorTaxiSection(right, -z));
+            }
+            return BuildTaxiLoftMesh(sections, "TaxiLoftCabin", false);
+        }
+
+        static void TaxiBodySample(float z, out float w, out float yB, out float yS, out float yE,
+                                   out float yT, out float xE)
+        {
+            float t = Mathf.Clamp01((z + 2.25f) / 4.5f);
+            w = 0.915f + 0.045f * Mathf.Sin(t * Mathf.PI);
+            yB = 0.29f + 0.01f * Mathf.Abs(t - 0.5f) * 2f;
+            yS = Mathf.Lerp(0.76f, 0.66f, t);
+            yE = Mathf.Lerp(1.03f, 0.79f, t) + 0.045f * Mathf.Sin(t * Mathf.PI);
+            yT = yE + 0.03f;
+            xE = Mathf.Max(w - 0.12f, w * 0.55f);
+            float archR = 0.415f;
+            foreach (float axle in new[] { -1.38f, 1.38f })
+            {
+                float d = Mathf.Abs(z - axle);
+                if (d < archR) yB = Mathf.Max(yB, 0.35f + Mathf.Sqrt(archR * archR - d * d));
+            }
+        }
+
+        static List<Vector3> MirrorTaxiSection(List<Vector2> right, float unityZ)
+        {
+            var section = new List<Vector3>(right.Count * 2);
+            for (int i = 0; i < right.Count; i++) section.Add(new Vector3(-right[i].x, right[i].y, unityZ));
+            for (int i = right.Count - 1; i >= 0; i--) section.Add(new Vector3(right[i].x, right[i].y, unityZ));
+            return section;
+        }
+
+        static Mesh BuildTaxiLoftMesh(List<List<Vector3>> sections, string name, bool capEnds)
+        {
+            var mesh = new Mesh { name = name };
+            var vertices = new List<Vector3>(sections.Count * sections[0].Count);
+            var triangles = new List<int>((sections.Count - 1) * sections[0].Count * 6);
+            var uv = new List<Vector2>(vertices.Capacity);
+            int ring = sections[0].Count;
+            for (int s = 0; s < sections.Count; s++)
+            {
+                for (int i = 0; i < ring; i++)
+                {
+                    Vector3 p = sections[s][i];
+                    vertices.Add(p);
+                    uv.Add(new Vector2(i / (float)Mathf.Max(1, ring - 1), s / (float)Mathf.Max(1, sections.Count - 1)));
+                }
+            }
+            for (int s = 0; s < sections.Count - 1; s++)
+            {
+                for (int i = 0; i < ring; i++)
+                {
+                    int a = s * ring + i;
+                    int b = s * ring + ((i + 1) % ring);
+                    int c = (s + 1) * ring + ((i + 1) % ring);
+                    int d = (s + 1) * ring + i;
+                    triangles.Add(a); triangles.Add(d); triangles.Add(c);
+                    triangles.Add(a); triangles.Add(c); triangles.Add(b);
+                }
+            }
+            if (capEnds)
+            {
+                int start = vertices.Count;
+                Vector3 p0 = Vector3.zero;
+                for (int i = 0; i < ring; i++) p0 += sections[0][i];
+                p0 /= ring;
+                vertices.Add(p0); uv.Add(Vector2.zero);
+                int end = vertices.Count;
+                Vector3 p1 = Vector3.zero;
+                for (int i = 0; i < ring; i++) p1 += sections[sections.Count - 1][i];
+                p1 /= ring;
+                vertices.Add(p1); uv.Add(Vector2.one);
+                for (int i = 0; i < ring; i++)
+                {
+                    triangles.Add(start); triangles.Add((i + 1) % ring); triangles.Add(i);
+                    int baseEnd = (sections.Count - 1) * ring;
+                    triangles.Add(end); triangles.Add(baseEnd + i); triangles.Add(baseEnd + (i + 1) % ring);
+                }
+            }
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.SetUVs(0, uv);
+            mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             return mesh;
         }
@@ -873,15 +1361,25 @@ namespace Nyc.Gameplay
             return go;
         }
 
-        static Transform CreateWheelChild(Transform parent, string name, Vector3 localPos, Material material)
+        static Transform CreateWheelChild(Transform parent, string name, Vector3 localPos, Material material, bool isLeft = false)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localPosition = localPos;
+            if (isLeft) go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = CreateWheelDiscMesh(radius: 0.35f, width: 0.22f);
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = material;
+
+            // Separate alloy hub keeps the taxi wheels readable against the dark tyre, matching
+            // the five-spoke wheel insert used by actor-models.js.
+            var hub = new GameObject(name + "_AlloyHub");
+            hub.transform.SetParent(go.transform, false);
+            var hubFilter = hub.AddComponent<MeshFilter>();
+            hubFilter.sharedMesh = CreateWheelDiscMesh(radius: 0.165f, width: 0.235f);
+            var hubRenderer = hub.AddComponent<MeshRenderer>();
+            hubRenderer.sharedMaterial = CreateMaterial("WheelAlloy", new Color(0.78f, 0.82f, 0.88f), 0.72f, 0.82f);
             return go.transform;
         }
 

@@ -101,7 +101,15 @@ namespace Nyc.Rendering.Passes
             float contrast = _settings.contrast;
             float saturation = _settings.saturation;
 
-            var pp = FindAnyObjectByType<PostProcessingController>();
+            var pp = PostProcessingController.Instance;
+            if (pp == null)
+            {
+                #if UNITY_2023_1_OR_NEWER
+                pp = UnityEngine.Object.FindAnyObjectByType<PostProcessingController>();
+                #else
+                pp = UnityEngine.Object.FindObjectOfType<PostProcessingController>();
+                #endif
+            }
             if (pp != null)
             {
                 threshold = pp.currentLook.bloomThreshold;
@@ -133,11 +141,15 @@ namespace Nyc.Rendering.Passes
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
-            if (cameraData.isSceneViewCamera || !resourcesData.activeColorTexture.IsValid()) return;
+            // Use the tracked camera color resource. activeColorTexture may alias the
+            // backbuffer during an off-screen Camera.Render (the trailer capture path),
+            // and asking RenderGraph for its descriptor produces an invalid-handle error.
+            TextureHandle cameraColor = resourcesData.cameraColor;
+            if (cameraData.isSceneViewCamera || !cameraColor.IsValid()) return;
 
             UpdateMaterialParams();
 
-            TextureDesc desc = resourcesData.activeColorTexture.GetDescriptor(renderGraph);
+            TextureDesc desc = renderGraph.GetTextureDesc(cameraColor);
             TextureDesc downDesc = desc;
             downDesc.width = Mathf.Max(desc.width / 2, 1);
             downDesc.height = Mathf.Max(desc.height / 2, 1);
@@ -158,7 +170,7 @@ namespace Nyc.Rendering.Passes
             // 1. Prefilter Pass (Pass 0: extract bright highlights with soft knee and peak limit)
             using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomPrefilter", out var passData))
             {
-                passData.source = resourcesData.activeColorTexture;
+                passData.source = cameraColor;
                 passData.material = _material;
                 passData.passIndex = 0;
 
@@ -214,7 +226,7 @@ namespace Nyc.Rendering.Passes
             // 4. Composite & Color Grading Pass (Pass 2)
             using (var builder = renderGraph.AddRasterRenderPass<RasterPassData>("BloomComposite", out var passData))
             {
-                passData.source = resourcesData.activeColorTexture;
+                passData.source = cameraColor;
                 passData.material = _material;
                 passData.passIndex = 2;
 
@@ -229,7 +241,7 @@ namespace Nyc.Rendering.Passes
             }
 
             // 5. Restore back to camera color
-            renderGraph.AddBlitPass(composite, resourcesData.activeColorTexture, Vector2.one, Vector2.zero, passName: "BloomRestore");
+            renderGraph.AddBlitPass(composite, cameraColor, Vector2.one, Vector2.zero, passName: "BloomRestore");
         }
 #else
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)

@@ -89,7 +89,16 @@ namespace Nyc.Gameplay
             Position.y += Mathf.Cos(Heading) * Speed * dt;
             Height += VerticalSpeed * dt;
 
-            Height = Mathf.Clamp(Height, minHeight, maxHeight);
+            // Rooftop surface collision support: helicopter lands and rests on building rooftops
+            float roofY = (ctx != null && ctx.Collision != null) ? ctx.Collision.GetRoofHeight(Position.x, Position.y, Height, radius * 0.45f) : 0f;
+            float effectiveFloor = Mathf.Max(minHeight, roofY);
+
+            if (Height < effectiveFloor)
+            {
+                Height = effectiveFloor;
+                if (VerticalSpeed < 0f) VerticalSpeed = 0f;
+            }
+            Height = Mathf.Clamp(Height, effectiveFloor, maxHeight);
 
             ctx.ClampToIsland(ref Position, true, ref Speed);
             ctx.Collision.Resolve(ref Position, radius, radius, Height, ctx.Normals);

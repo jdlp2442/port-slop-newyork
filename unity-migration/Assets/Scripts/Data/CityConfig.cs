@@ -53,6 +53,7 @@ namespace Nyc.Core
 
             BuildShoreProfile(geo.Manhattan);
             BuildTeleports(geo);
+            CitySpatialIndex.Build(geo);
             Ready = true;
         }
 
